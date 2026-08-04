@@ -472,6 +472,7 @@ function Home({
   const [coll, setColl] = useState<string | null>(null);
   const active = COLLECTIONS.find((c) => c.key === coll) ?? null;
   const [slide, setSlide] = useState(0);
+  useReveal(coll); // новые карточки после сброса подборки тоже проявляются
   useEffect(() => {
     const t = setInterval(() => setSlide((s) => (s + 1) % FEATURED.length), 5200);
     return () => clearInterval(t);
