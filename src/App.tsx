@@ -165,6 +165,42 @@ const Heart = ({ on }: { on?: boolean }) => (
   </svg>
 );
 
+const FEATURED = [5212622, 5245111, 5243214]
+  .map((id) => LOTS.find((l) => l.id === id)!)
+  .filter(Boolean);
+
+/* ── Редакционный заголовок секции ── */
+function SecHead({
+  kicker,
+  title,
+  accent,
+  count,
+  right,
+}: {
+  kicker: string;
+  title: string;
+  accent?: string;
+  count?: number | string;
+  right?: React.ReactNode;
+}) {
+  return (
+    <div className="sh reveal">
+      <span className="sh-kicker">
+        <i className="sh-diamond" aria-hidden="true" />
+        {kicker}
+        {count !== undefined && <b>{count}</b>}
+      </span>
+      <div className="sh-row">
+        <h2 className="sh-title">
+          {title} {accent && <em>{accent}</em>}
+        </h2>
+        <span className="sh-rule" aria-hidden="true" />
+        {right}
+      </div>
+    </div>
+  );
+}
+
 /* ── карточка лота ── */
 function LotCard({ l, favs, cart }: { l: Lot; favs: Store; cart: Store }) {
   return (
@@ -240,9 +276,26 @@ function Header({
     );
   };
 
+  const [menu, setMenu] = useState(false);
+  useEffect(() => {
+    document.body.style.overflow = menu ? "hidden" : "";
+    return () => { document.body.style.overflow = ""; };
+  }, [menu]);
+  const pick = (c: Category | "all") => {
+    setMenu(false);
+    setCat(c);
+    goCatalog();
+  };
+
   return (
+    <>
     <header className="hd">
       <div className="hd-top">
+        <button className="hd-burger" aria-label="Меню" onClick={() => setMenu(true)}>
+          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round">
+            <path d="M4 7 h16 M4 12 h16 M4 17 h10" />
+          </svg>
+        </button>
         <a
           href="#/"
           className="hd-logo"
@@ -316,6 +369,44 @@ function Header({
         ))}
       </nav>
     </header>
+
+      {menu && (
+        <>
+          <div className="mn-bg" onClick={() => setMenu(false)} />
+          <aside className="mn" role="dialog" aria-label="Меню">
+            <div className="mn-head">
+              <Logo h={26} />
+              <button className="mn-x" aria-label="Закрыть" onClick={() => setMenu(false)}>✕</button>
+            </div>
+            <nav className="mn-list">
+              {(Object.keys(CATEGORIES) as (Category | "all")[]).map((c, i) => (
+                <button
+                  key={c}
+                  className={`mn-item${cat === c ? " on" : ""}`}
+                  style={{ animationDelay: `${0.05 + i * 0.05}s` }}
+                  onClick={() => pick(c)}
+                >
+                  <CatIcon c={c} />
+                  {CATEGORIES[c]}
+                  <span aria-hidden="true">→</span>
+                </button>
+              ))}
+            </nav>
+            <div className="mn-foot">
+              <button className="mn-link" onClick={() => { setMenu(false); go("/favs"); }}>
+                ♥ Избранное{favs.ids.length > 0 && ` · ${favs.ids.length}`}
+              </button>
+              <button className="mn-link" onClick={() => { setMenu(false); go("/cart"); }}>
+                Корзина{cart.ids.length > 0 && ` · ${cart.ids.length}`}
+              </button>
+              <a className="mn-link" href="https://t.me/epoha_salon" target="_blank" rel="noopener noreferrer">
+                Telegram
+              </a>
+            </div>
+          </aside>
+        </>
+      )}
+    </>
   );
 }
 
@@ -380,6 +471,11 @@ function Home({
 }) {
   const [coll, setColl] = useState<string | null>(null);
   const active = COLLECTIONS.find((c) => c.key === coll) ?? null;
+  const [slide, setSlide] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setSlide((s) => (s + 1) % FEATURED.length), 5200);
+    return () => clearInterval(t);
+  }, []);
 
   const shown = useMemo(() => {
     let list = LOTS.slice();
@@ -402,9 +498,19 @@ function Home({
 
   return (
     <>
-      {/* Витрина недели */}
+      {/* Витрина недели: живой слайдер предметов */}
       <section className="bn">
-        <img className="bn-img" src={img(5212622, 1)} alt="" aria-hidden="true" />
+        {FEATURED.map((f, i) => (
+          <img
+            key={f.id}
+            className={`bn-img${i === slide ? " on" : ""}`}
+            src={img(f.id, 1)}
+            alt=""
+            aria-hidden="true"
+            fetchPriority={i === 0 ? "high" : undefined}
+            loading={i === 0 ? undefined : "lazy"}
+          />
+        ))}
         <div className="bn-shade" />
         <div className="wrap bn-inner">
           <p className="bn-over">Витрина недели · коллекция пополнена</p>
@@ -438,16 +544,45 @@ function Home({
             <span><b>7–14</b> дней доставка</span>
           </div>
         </div>
+        {/* Продающая карточка предмета на витрине */}
+        {FEATURED.map((f, i) => (
+          <button
+            key={f.id}
+            className={`bn-card${i === slide ? " on" : ""}`}
+            onClick={() => go(`/lot/${f.id}`)}
+          >
+            <span className="bn-card-k">Сейчас на витрине</span>
+            <b>{f.title}</b>
+            <span className="bn-card-era">{f.era}</span>
+            <span className="bn-card-row">
+              <u>€{fmt(f.price)}</u>
+              <s
+                onClick={(e) => {
+                  e.stopPropagation();
+                  cart.has(f.id) ? go("/cart") : cart.add(f.id);
+                }}
+              >
+                {cart.has(f.id) ? "В корзине ✓" : "В корзину"}
+              </s>
+            </span>
+          </button>
+        ))}
+        <div className="bn-dots" role="tablist" aria-label="Предметы витрины">
+          {FEATURED.map((f, i) => (
+            <button
+              key={f.id}
+              className={i === slide ? "on" : ""}
+              aria-label={f.title}
+              onClick={() => setSlide(i)}
+            />
+          ))}
+        </div>
       </section>
 
       {/* Подборки */}
       <section className="sec" id="collections">
         <div className="wrap">
-          <div className="sec-head reveal">
-            <span className="sec-no">КУРАТОРСКИЕ ПОДБОРКИ</span>
-            <h2 className="sec-title">Настроения</h2>
-            <i className="sec-rule" />
-          </div>
+          <SecHead kicker="Кураторские подборки" title="Настроения" accent="интерьера" />
           <div className="colls">
             {COLLECTIONS.map((c) => (
               <button
@@ -475,18 +610,18 @@ function Home({
       {/* Каталог */}
       <section className="sec" id="catalog" style={{ paddingTop: 20 }}>
         <div className="wrap">
-          <div className="sec-head reveal">
-            <span className="sec-no">
-              {active ? `ПОДБОРКА · ${active.title.toUpperCase()}` : "КАТАЛОГ"} · {shown.length}
-            </span>
-            <h2 className="sec-title">{active ? active.title : CATEGORIES[cat]}</h2>
-            <i className="sec-rule" />
-            <select className="sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Сортировка">
-              <option value="new">Сначала витринные</option>
-              <option value="cheap">Дешевле</option>
-              <option value="rich">Дороже</option>
-            </select>
-          </div>
+          <SecHead
+            kicker={active ? "Подборка" : "Каталог"}
+            title={active ? active.title : CATEGORIES[cat]}
+            count={shown.length}
+            right={
+              <select className="sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Сортировка">
+                <option value="new">Сначала витринные</option>
+                <option value="cheap">Дешевле</option>
+                <option value="rich">Дороже</option>
+              </select>
+            }
+          />
           {active && (
             <button className="coll-reset" onClick={() => setColl(null)}>
               ✕ Сбросить подборку «{active.title}»
@@ -509,11 +644,7 @@ function Home({
       {/* Ценности */}
       <section className="sec" id="how" style={{ paddingTop: 24 }}>
         <div className="wrap">
-          <div className="sec-head reveal">
-            <span className="sec-no">ПОЧЕМУ ЭПОХА</span>
-            <h2 className="sec-title">Три обещания</h2>
-            <i className="sec-rule" />
-          </div>
+          <SecHead kicker="Почему ЭПОХА" title="Три" accent="обещания" />
           <div className="steps">
             <div className="step reveal">
               <span className="step-no">I.</span>
@@ -548,13 +679,7 @@ function Home({
       {recent.length > 0 && (
         <section className="sec" style={{ paddingTop: 0 }}>
           <div className="wrap">
-            <div className="sec-head reveal">
-              <span className="sec-no">ВЫ СМОТРЕЛИ</span>
-              <h2 className="sec-title" style={{ fontSize: "clamp(24px,2.6vw,36px)" }}>
-                Недавние предметы
-              </h2>
-              <i className="sec-rule" />
-            </div>
+            <SecHead kicker="Вы смотрели" title="Недавние" accent="предметы" />
             <div className="lots">
               {recent.map((l) => (
                 <LotCard key={l.id} l={l} favs={favs} cart={cart} />
@@ -564,12 +689,6 @@ function Home({
         </section>
       )}
 
-      <figure className="quote" id="about">
-        <blockquote className="reveal">
-          Новая мебель бывает у всех. <b>Мебель с прошлым</b> — только у вас.
-        </blockquote>
-        <figcaption className="reveal">ЭПОХА · винтажная мебель</figcaption>
-      </figure>
     </>
   );
 }
@@ -648,13 +767,7 @@ function LotPage({ lot, favs, cart }: { lot: Lot; favs: Store; cart: Store }) {
 
         {related.length > 0 && (
           <section className="pd-related">
-            <div className="sec-head">
-              <span className="sec-no">ИЗ ТОЙ ЖЕ ВИТРИНЫ</span>
-              <h2 className="sec-title" style={{ fontSize: "clamp(26px,3vw,40px)" }}>
-                Похожие предметы
-              </h2>
-              <i className="sec-rule" />
-            </div>
+            <SecHead kicker="Из той же витрины" title="Похожие" accent="предметы" />
             <div className="lots">
               {related.map((l) => (
                 <LotCard key={l.id} l={l} favs={favs} cart={cart} />

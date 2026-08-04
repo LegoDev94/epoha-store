@@ -5,7 +5,7 @@ export function Logo({ h = 34 }: { h?: number }) {
   return (
     <svg
       height={h}
-      viewBox="0 0 236 56"
+      viewBox="0 0 212 56"
       fill="none"
       role="img"
       aria-label="ЭПОХА"
@@ -34,7 +34,7 @@ export function Logo({ h = 34 }: { h?: number }) {
         ЭП
       </text>
       {/* О — овальное зеркало в латунной раме */}
-      <g transform="translate(88 4)">
+      <g transform="translate(66 4)">
         <ellipse cx="24" cy="24" rx="21" ry="24" fill="url(#lg-brass)" />
         <ellipse cx="24" cy="24" rx="16.5" ry="19.5" fill="url(#lg-glass)" />
         {/* блик амальгамы */}
@@ -45,7 +45,7 @@ export function Logo({ h = 34 }: { h?: number }) {
         <circle cx="24" cy="1.5" r="2.6" fill="url(#lg-brass)" />
       </g>
       <text
-        x="140"
+        x="118"
         y="43"
         fontFamily="'Cormorant Garamond', Georgia, serif"
         fontWeight="700"
