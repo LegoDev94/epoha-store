@@ -1,20 +1,31 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { CATEGORIES, LOTS, img, type Category, type Lot } from "./data/catalog";
+import {
+  CATEGORIES,
+  COLLECTIONS,
+  LOTS,
+  img,
+  type Category,
+  type Lot,
+} from "./data/catalog";
+import { Logo } from "./Logo";
 
-/* ═══ ПАТИНА — салон винтажной мебели ═══
-   Многостраничник на hash-маршрутах (надёжно для GitHub Pages):
-   #/            — главная (hero + каталог + процесс)
-   #/lot/:id     — страница карточки товара
+/* ═══ ЭПОХА — магазин винтажной мебели ═══
+   Полноценный e-commerce на hash-маршрутах (GitHub Pages friendly):
+   #/            — витрина (hero, подборки, каталог, ценности)
+   #/lot/:id     — карточка товара
+   #/favs        — избранное
    #/cart        — корзина
    #/checkout    — оформление заказа
-   #/success     — подтверждение заявки
-   Корзина живёт в localStorage. */
+   #/success/:n  — подтверждение
+   Корзина и избранное — localStorage. */
 
 const fmt = (n: number) => n.toLocaleString("ru-RU");
 
+/* ── маршрутизация ── */
 type Route =
   | { view: "home" }
   | { view: "lot"; lot: Lot }
+  | { view: "favs" }
   | { view: "cart" }
   | { view: "checkout" }
   | { view: "success"; order: string };
@@ -26,70 +37,149 @@ function parseRoute(): Route {
     const found = LOTS.find((l) => l.id === Number(lot[1]));
     if (found) return { view: "lot", lot: found };
   }
+  if (h.startsWith("#/favs")) return { view: "favs" };
   if (h.startsWith("#/cart")) return { view: "cart" };
   if (h.startsWith("#/checkout")) return { view: "checkout" };
-  const success = h.match(/^#\/success\/([A-Z0-9-]+)/);
-  if (success) return { view: "success", order: success[1] };
+  const s = h.match(/^#\/success\/([A-Z0-9-]+)/);
+  if (s) return { view: "success", order: s[1] };
   return { view: "home" };
 }
 
 function useRoute(): Route {
   const [route, setRoute] = useState<Route>(parseRoute);
   useEffect(() => {
-    const on = () => {
-      const r = parseRoute();
-      setRoute(r);
-      if (r.view !== "home") scrollTo({ top: 0 });
-    };
+    const on = () => setRoute(parseRoute());
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
   return route;
 }
-
 const go = (hash: string) => {
   location.hash = hash;
 };
 
-function useCart() {
+/* ── хранилища ── */
+function useStoredIds(key: string) {
   const [ids, setIds] = useState<number[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem("patina-cart") || "[]");
+      return JSON.parse(localStorage.getItem(key) || "[]");
     } catch {
       return [];
     }
   });
   useEffect(() => {
-    localStorage.setItem("patina-cart", JSON.stringify(ids));
-  }, [ids]);
+    localStorage.setItem(key, JSON.stringify(ids));
+  }, [key, ids]);
   return {
     ids,
+    has: (id: number) => ids.includes(id),
     add: (id: number) => setIds((s) => (s.includes(id) ? s : [...s, id])),
     remove: (id: number) => setIds((s) => s.filter((x) => x !== id)),
+    toggle: (id: number) =>
+      setIds((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id])),
     clear: () => setIds([]),
   };
 }
+type Store = ReturnType<typeof useStoredIds>;
 
-/* Reveal-on-scroll — перевешивается при смене маршрута */
 function useReveal(dep: unknown) {
   useEffect(() => {
     const io = new IntersectionObserver(
       (es) => es.forEach((e) => e.isIntersecting && e.target.classList.add("in")),
-      { threshold: 0.12 }
+      { threshold: 0.1 }
     );
     document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
     return () => io.disconnect();
   }, [dep]);
 }
 
-const MARQUEE =
-  "рококо · густавианский стиль · бидермейер · ар-нуво · поздний ампир · skønvirke · хрусталь · золочение · морёный дуб · ручная резьба · ";
+/* ── иконки категорий (line-art, свои) ── */
+function CatIcon({ c }: { c: Category | "all" }) {
+  const s = {
+    stroke: "currentColor",
+    strokeWidth: 1.6,
+    fill: "none",
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  };
+  switch (c) {
+    case "seating":
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <path d="M5 11 V8 a3 3 0 0 1 3-3 h8 a3 3 0 0 1 3 3 v3" />
+          <path d="M4 11 a2 2 0 0 1 2 2 v2 h12 v-2 a2 2 0 0 1 4 0 v3 a2 2 0 0 1 -2 2 H4 a2 2 0 0 1 -2 -2 v-3 a2 2 0 0 1 2 -2 Z" />
+          <path d="M6 20 v1.5 M18 20 v1.5" />
+        </svg>
+      );
+    case "mirror":
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <ellipse cx="12" cy="11" rx="6.5" ry="8.5" />
+          <path d="M9 8 c1-2 3-3 4.5-2.5" />
+          <path d="M8 21.5 h8 M12 19.5 v2" />
+        </svg>
+      );
+    case "light":
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <path d="M12 2 v3 M7 7 a5 5 0 0 1 10 0 c0 2-1.2 3-2.5 4 H9.5 C8.2 10 7 9 7 7 Z" />
+          <path d="M9.5 11 12 16 14.5 11 M12 16 v3 M10 21.5 h4" />
+        </svg>
+      );
+    case "storage":
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <rect x="4" y="4" width="16" height="16" rx="1.5" />
+          <path d="M4 9.3 h16 M4 14.6 h16 M10.5 6.6 h3 M10.5 12 h3 M10.5 17.3 h3" />
+        </svg>
+      );
+    case "table":
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <path d="M3 8 h18 M5 8 c0 4-.5 9-1.5 12 M19 8 c0 4 .5 9 1.5 12 M8 8 c0 3-.3 7-1 10 M16 8 c0 3 .3 7 1 10" />
+        </svg>
+      );
+    default:
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <rect x="3.5" y="3.5" width="7.5" height="7.5" rx="1" />
+          <rect x="13" y="3.5" width="7.5" height="7.5" rx="1" />
+          <rect x="3.5" y="13" width="7.5" height="7.5" rx="1" />
+          <rect x="13" y="13" width="7.5" height="7.5" rx="1" />
+        </svg>
+      );
+  }
+}
 
-/* ── Карточка лота в сетке ── */
-function LotCard({ l }: { l: Lot }) {
+const Heart = ({ on }: { on?: boolean }) => (
+  <svg
+    viewBox="0 0 24 24"
+    width="18"
+    height="18"
+    fill={on ? "currentColor" : "none"}
+    stroke="currentColor"
+    strokeWidth="1.8"
+    strokeLinejoin="round"
+  >
+    <path d="M12 20.5 C7 16.5 3.5 13.3 3.5 9.6 a4.6 4.6 0 0 1 8.5 -2.4 A4.6 4.6 0 0 1 20.5 9.6 c0 3.7-3.5 6.9-8.5 10.9 Z" />
+  </svg>
+);
+
+/* ── карточка лота ── */
+function LotCard({ l, favs, cart }: { l: Lot; favs: Store; cart: Store }) {
   return (
     <article className="lot reveal" onClick={() => go(`/lot/${l.id}`)}>
       {l.sold && <span className="lot-sold">ПРОДАНО</span>}
+      <button
+        className={`lot-fav${favs.has(l.id) ? " on" : ""}`}
+        aria-label="В избранное"
+        onClick={(e) => {
+          e.stopPropagation();
+          favs.toggle(l.id);
+        }}
+      >
+        <Heart on={favs.has(l.id)} />
+      </button>
       <div className="lot-imgs">
         <img src={img(l.id, 1)} alt={l.title} loading="lazy" width={760} height={570} />
         <img className="alt" src={img(l.id, 2)} alt="" loading="lazy" width={760} height={570} aria-hidden="true" />
@@ -99,36 +189,132 @@ function LotCard({ l }: { l: Lot }) {
         <span className="lot-era">{l.era}</span>
       </div>
       <h3 className="lot-title">{l.title}</h3>
-      <p className="lot-price">
-        €{fmt(l.price)} <small>{l.sold ? "· продано" : ""}</small>
-      </p>
+      <div className="lot-buy">
+        <p className="lot-price">€{fmt(l.price)}</p>
+        {!l.sold && (
+          <button
+            className={`lot-add${cart.has(l.id) ? " in" : ""}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              cart.has(l.id) ? go("/cart") : cart.add(l.id);
+            }}
+          >
+            {cart.has(l.id) ? "В корзине ✓" : "В корзину"}
+          </button>
+        )}
+      </div>
     </article>
   );
 }
 
-/* ── Шапка ── */
-function Header({ count }: { count: number }) {
+/* ── шапка с живым поиском и категориями ── */
+function Header({
+  favs,
+  cart,
+  query,
+  setQuery,
+  cat,
+  setCat,
+}: {
+  favs: Store;
+  cart: Store;
+  query: string;
+  setQuery: (q: string) => void;
+  cat: Category | "all";
+  setCat: (c: Category | "all") => void;
+}) {
+  const [focus, setFocus] = useState(false);
+  const found = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    if (q.length < 2) return [];
+    return LOTS.filter((l) =>
+      `${l.title} ${l.era} ${l.desc} ${CATEGORIES[l.cat]}`.toLowerCase().includes(q)
+    ).slice(0, 5);
+  }, [query]);
+
+  const goCatalog = () => {
+    go("/");
+    setTimeout(
+      () => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" }),
+      60
+    );
+  };
+
   return (
-    <header className="hdr">
-      <a
-        href="#/"
-        className="hdr-logo"
-        onClick={(e) => {
-          e.preventDefault();
-          go("/");
-          scrollTo({ top: 0, behavior: "smooth" });
-        }}
-      >
-        ПАТИ<b>НА</b>
-      </a>
-      <nav className="hdr-nav">
-        <a href="#collection" onClick={(e) => { e.preventDefault(); go("/"); setTimeout(() => document.getElementById("collection")?.scrollIntoView({ behavior: "smooth" }), 50); }}>Коллекция</a>
-        <a href="#how" onClick={(e) => { e.preventDefault(); go("/"); setTimeout(() => document.getElementById("how")?.scrollIntoView({ behavior: "smooth" }), 50); }}>Как мы работаем</a>
-        <a href="#about" onClick={(e) => { e.preventDefault(); go("/"); setTimeout(() => document.getElementById("about")?.scrollIntoView({ behavior: "smooth" }), 50); }}>О салоне</a>
+    <header className="hd">
+      <div className="hd-top">
+        <a
+          href="#/"
+          className="hd-logo"
+          onClick={(e) => {
+            e.preventDefault();
+            go("/");
+            scrollTo({ top: 0, behavior: "smooth" });
+          }}
+        >
+          <Logo h={30} />
+        </a>
+        <div className="hd-search">
+          <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="1.8">
+            <circle cx="11" cy="11" r="6.5" />
+            <path d="M16 16 21 21" strokeLinecap="round" />
+          </svg>
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            onFocus={() => setFocus(true)}
+            onBlur={() => setTimeout(() => setFocus(false), 180)}
+            onKeyDown={(e) => e.key === "Enter" && goCatalog()}
+            placeholder="Найти предмет: рококо, зеркало, комод…"
+            aria-label="Поиск по коллекции"
+          />
+          {focus && found.length > 0 && (
+            <div className="hd-drop">
+              {found.map((l) => (
+                <button key={l.id} className="hd-drop-item" onMouseDown={() => go(`/lot/${l.id}`)}>
+                  <img src={img(l.id, 1)} alt="" />
+                  <span>
+                    <b>{l.title}</b>
+                    <i>{l.era} · €{fmt(l.price)}</i>
+                  </span>
+                </button>
+              ))}
+              <button className="hd-drop-all" onMouseDown={goCatalog}>
+                Все результаты в каталоге →
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="hd-actions">
+          <button className="hd-act" onClick={() => go("/favs")} aria-label="Избранное">
+            <Heart on={favs.ids.length > 0} />
+            {favs.ids.length > 0 && <b>{favs.ids.length}</b>}
+          </button>
+          <button className="hd-act hd-cart" onClick={() => go("/cart")}>
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinejoin="round">
+              <path d="M4 7 h16 l-1.6 12.2 a2 2 0 0 1 -2 1.8 H7.6 a2 2 0 0 1 -2 -1.8 Z" />
+              <path d="M8.5 10 V6.5 a3.5 3.5 0 0 1 7 0 V10" strokeLinecap="round" />
+            </svg>
+            Корзина
+            {cart.ids.length > 0 && <b>{cart.ids.length}</b>}
+          </button>
+        </div>
+      </div>
+      <nav className="hd-cats" aria-label="Категории">
+        {(Object.keys(CATEGORIES) as (Category | "all")[]).map((c) => (
+          <button
+            key={c}
+            className={`hd-cat${cat === c ? " on" : ""}`}
+            onClick={() => {
+              setCat(c);
+              goCatalog();
+            }}
+          >
+            <CatIcon c={c} />
+            {CATEGORIES[c]}
+          </button>
+        ))}
       </nav>
-      <button className="hdr-cart" onClick={() => go("/cart")}>
-        Корзина <b>{count}</b>
-      </button>
     </header>
   );
 }
@@ -140,34 +326,31 @@ function Footer() {
         <div className="ftr-grid">
           <div>
             <div className="ftr-logo">
-              ПАТИ<b>НА</b>
+              <Logo h={36} />
             </div>
             <p>
-              Винтажная и антикварная мебель с европейских аукционов.
-              Реставрация, гарантия подлинности, доставка.
+              Винтажная и антикварная мебель XIX–XX веков. Подлинные предметы,
+              бережная реставрация, доставка по Европе.
             </p>
           </div>
           <div className="ftr-col">
-            <span>Салон</span>
-            <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Коллекция</a>
+            <span>Магазин</span>
+            <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Витрина</a>
+            <a href="#/favs" onClick={(e) => { e.preventDefault(); go("/favs"); }}>Избранное</a>
             <a href="#/cart" onClick={(e) => { e.preventDefault(); go("/cart"); }}>Корзина</a>
           </div>
           <div className="ftr-col">
             <span>Связаться</span>
-            <a href="mailto:salon@patina.example">salon@patina.example</a>
+            <a href="mailto:hello@epoha.example">hello@epoha.example</a>
             <a href="tel:+37360000000">+373 60 000 000</a>
-            <a href="https://t.me/patina_salon" target="_blank" rel="noopener noreferrer">
-              Telegram
-            </a>
+            <a href="https://t.me/epoha_salon" target="_blank" rel="noopener noreferrer">Telegram</a>
           </div>
         </div>
         <div className="ftr-bottom">
-          <span>© {new Date().getFullYear()} ПАТИНА · Демонстрационная витрина</span>
+          <span>© {new Date().getFullYear()} ЭПОХА · Демонстрационная витрина</span>
           <span>
             Дизайн и разработка —{" "}
-            <a href="https://mtbyte.io" target="_blank" rel="noopener noreferrer">
-              METABYTE
-            </a>
+            <a href="https://mtbyte.io" target="_blank" rel="noopener noreferrer">METABYTE</a>
           </span>
         </div>
       </div>
@@ -175,161 +358,233 @@ function Footer() {
   );
 }
 
-/* ── Главная ── */
-function Home({ filter, setFilter }: { filter: Category | "all"; setFilter: (c: Category | "all") => void }) {
-  const shown = useMemo(
-    () => (filter === "all" ? LOTS : LOTS.filter((l) => l.cat === filter)),
-    [filter]
-  );
+/* ── главная-витрина ── */
+function Home({
+  favs,
+  cart,
+  cat,
+  setCat,
+  query,
+  sort,
+  setSort,
+  viewed,
+}: {
+  favs: Store;
+  cart: Store;
+  cat: Category | "all";
+  setCat: (c: Category | "all") => void;
+  query: string;
+  sort: string;
+  setSort: (s: string) => void;
+  viewed: number[];
+}) {
+  const [coll, setColl] = useState<string | null>(null);
+  const active = COLLECTIONS.find((c) => c.key === coll) ?? null;
+
+  const shown = useMemo(() => {
+    let list = LOTS.slice();
+    if (active) list = list.filter((l) => active.ids.includes(l.id));
+    else if (cat !== "all") list = list.filter((l) => l.cat === cat);
+    const q = query.trim().toLowerCase();
+    if (q.length >= 2)
+      list = list.filter((l) =>
+        `${l.title} ${l.era} ${l.desc}`.toLowerCase().includes(q)
+      );
+    if (sort === "cheap") list.sort((a, b) => a.price - b.price);
+    if (sort === "rich") list.sort((a, b) => b.price - a.price);
+    return list;
+  }, [cat, query, sort, active]);
+
+  const recent = viewed
+    .map((id) => LOTS.find((l) => l.id === id))
+    .filter(Boolean)
+    .slice(0, 4) as Lot[];
+
   return (
     <>
-      <section className="hero">
-        <div className="wrap hero-grid">
-          <div>
-            <p className="hero-over">Салон винтажной мебели · европейские аукционы</p>
-            <h1 className="hero-title" aria-label="ПАТИНА">
-              {"ПАТИНА".split("").map((ch, i) => (
-                <span key={i} style={{ animationDelay: `${0.2 + i * 0.07}s` }}>
-                  {ch}
-                </span>
-              ))}
-            </h1>
-            <p className="hero-sub">
-              Патина — это не износ. Это биография предмета. Мы находим мебель
-              с историей на аукционах Европы и привозим её в ваш дом.
-            </p>
-            <div className="hero-ctas">
-              <a
-                className="btn-brass"
-                href="#collection"
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.getElementById("collection")?.scrollIntoView({ behavior: "smooth" });
-                }}
-              >
-                Смотреть коллекцию →
-              </a>
-              <a
-                className="btn-ghost"
-                href="#how"
-                onClick={(e) => {
-                  e.preventDefault();
-                  document.getElementById("how")?.scrollIntoView({ behavior: "smooth" });
-                }}
-              >
-                Как мы работаем
-              </a>
-            </div>
+      {/* Витрина недели */}
+      <section className="bn">
+        <img className="bn-img" src={img(5212622, 1)} alt="" aria-hidden="true" />
+        <div className="bn-shade" />
+        <div className="wrap bn-inner">
+          <p className="bn-over">Витрина недели · коллекция пополнена</p>
+          <h1 className="bn-title">
+            Мебель, <em>пережившая моду</em>
+          </h1>
+          <p className="bn-sub">
+            Подлинные предметы XIX–XX веков: рококо, густавианский стиль,
+            бидермейер. Каждый лот проверен реставратором и готов к новой
+            жизни в вашем доме.
+          </p>
+          <div className="bn-ctas">
+            <button
+              className="btn-brass"
+              onClick={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })}
+            >
+              Смотреть коллекцию →
+            </button>
+            <button
+              className="btn-ghost"
+              onClick={() => document.getElementById("collections")?.scrollIntoView({ behavior: "smooth" })}
+            >
+              Подборки
+            </button>
           </div>
-          <figure className="hero-frame">
-            <div className="hero-frame-inner">
-              <img
-                src={img(5212622, 1)}
-                alt="Диван в стиле рококо — лот №01"
-                width={880}
-                height={660}
-                fetchPriority="high"
-              />
-              <figcaption className="hero-frame-label">
-                Лот №01 · Диван рококо · Швеция, XX век
-              </figcaption>
-            </div>
-            <span className="hero-plaque">В коллекции</span>
-          </figure>
+          <div className="bn-facts">
+            <span><b>{LOTS.length}</b> лотов в наличии</span>
+            <i />
+            <span><b>XIX–XX</b> век</span>
+            <i />
+            <span><b>7–14</b> дней доставка</span>
+          </div>
         </div>
       </section>
 
-      <div className="marquee" aria-hidden="true">
-        <div className="marquee-track">
-          <span>{MARQUEE.repeat(3)}</span>
-          <span>{MARQUEE.repeat(3)}</span>
-        </div>
-      </div>
-
-      <section className="sec" id="collection">
+      {/* Подборки */}
+      <section className="sec" id="collections">
         <div className="wrap">
           <div className="sec-head reveal">
-            <span className="sec-no">КАТАЛОГ · {LOTS.length} ЛОТОВ</span>
-            <h2 className="sec-title">Коллекция</h2>
+            <span className="sec-no">КУРАТОРСКИЕ ПОДБОРКИ</span>
+            <h2 className="sec-title">Настроения</h2>
             <i className="sec-rule" />
           </div>
-          <div className="chips reveal">
-            {(Object.keys(CATEGORIES) as (Category | "all")[]).map((c) => (
+          <div className="colls">
+            {COLLECTIONS.map((c) => (
               <button
-                key={c}
-                className={`chip${filter === c ? " on" : ""}`}
-                onClick={() => setFilter(c)}
+                key={c.key}
+                className={`coll reveal${coll === c.key ? " on" : ""}`}
+                onClick={() => {
+                  setColl(coll === c.key ? null : c.key);
+                  setCat("all");
+                  document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" });
+                }}
               >
-                {CATEGORIES[c]}
+                <img src={img(c.cover, 1)} alt="" loading="lazy" />
+                <span className="coll-shade" />
+                <span className="coll-text">
+                  <b>{c.title}</b>
+                  <i>{c.hint}</i>
+                  <u>{c.ids.length} лотов →</u>
+                </span>
               </button>
             ))}
           </div>
-          <div className="lots">
-            {shown.map((l) => (
-              <LotCard key={l.id} l={l} />
-            ))}
-          </div>
         </div>
       </section>
 
-      <section className="sec" id="how" style={{ paddingTop: 0 }}>
+      {/* Каталог */}
+      <section className="sec" id="catalog" style={{ paddingTop: 20 }}>
         <div className="wrap">
           <div className="sec-head reveal">
-            <span className="sec-no">ПУТЬ ПРЕДМЕТА</span>
-            <h2 className="sec-title">Как мы работаем</h2>
+            <span className="sec-no">
+              {active ? `ПОДБОРКА · ${active.title.toUpperCase()}` : "КАТАЛОГ"} · {shown.length}
+            </span>
+            <h2 className="sec-title">{active ? active.title : CATEGORIES[cat]}</h2>
+            <i className="sec-rule" />
+            <select className="sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Сортировка">
+              <option value="new">Сначала витринные</option>
+              <option value="cheap">Дешевле</option>
+              <option value="rich">Дороже</option>
+            </select>
+          </div>
+          {active && (
+            <button className="coll-reset" onClick={() => setColl(null)}>
+              ✕ Сбросить подборку «{active.title}»
+            </button>
+          )}
+          {shown.length === 0 ? (
+            <div className="empty">
+              <p>Ничего не нашлось — попробуйте другой запрос.</p>
+            </div>
+          ) : (
+            <div className="lots">
+              {shown.map((l) => (
+                <LotCard key={l.id} l={l} favs={favs} cart={cart} />
+              ))}
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Ценности */}
+      <section className="sec" id="how" style={{ paddingTop: 24 }}>
+        <div className="wrap">
+          <div className="sec-head reveal">
+            <span className="sec-no">ПОЧЕМУ ЭПОХА</span>
+            <h2 className="sec-title">Три обещания</h2>
             <i className="sec-rule" />
           </div>
           <div className="steps">
             <div className="step reveal">
               <span className="step-no">I.</span>
-              <strong>Находим</strong>
+              <strong>Подлинность</strong>
               <p>
-                Каждую неделю отсматриваем сотни лотов на аукционах Швеции,
-                Дании и Германии. В коллекцию попадает один из пятидесяти —
-                с честной историей и здоровой конструкцией.
+                Каждый предмет атрибутирован: эпоха, школа, материалы. Никаких
+                «под старину» — только вещи с настоящей биографией.
               </p>
             </div>
             <div className="step reveal" style={{ transitionDelay: "90ms" }}>
               <span className="step-no">II.</span>
-              <strong>Проверяем</strong>
+              <strong>Состояние</strong>
               <p>
-                Осматриваем каркас, пружины, фурнитуру и следы реставраций.
-                Что требует внимания — приводим в порядок, сохраняя патину:
-                биографию предмета не смывают.
+                Реставратор проверяет каркас, пружины и фурнитуру до витрины.
+                Перед покупкой пришлём видеообзор — вы видите ровно то, что
+                приедет.
               </p>
             </div>
             <div className="step reveal" style={{ transitionDelay: "180ms" }}>
               <span className="step-no">III.</span>
-              <strong>Доставляем</strong>
+              <strong>Доставка</strong>
               <p>
-                Бережная упаковка и доставка по Европе. Перед отправкой —
-                видеообзор предмета: вы видите ровно то, что приедет к вам
-                домой.
+                Обрешётка, мягкая упаковка, страховка. По Европе — 7–14 дней,
+                до двери, с подъёмом. Оплата после подтверждения заказа.
               </p>
             </div>
           </div>
         </div>
       </section>
 
+      {/* Недавно смотрели */}
+      {recent.length > 0 && (
+        <section className="sec" style={{ paddingTop: 0 }}>
+          <div className="wrap">
+            <div className="sec-head reveal">
+              <span className="sec-no">ВЫ СМОТРЕЛИ</span>
+              <h2 className="sec-title" style={{ fontSize: "clamp(24px,2.6vw,36px)" }}>
+                Недавние лоты
+              </h2>
+              <i className="sec-rule" />
+            </div>
+            <div className="lots">
+              {recent.map((l) => (
+                <LotCard key={l.id} l={l} favs={favs} cart={cart} />
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       <figure className="quote" id="about">
         <blockquote className="reveal">
           Новая мебель бывает у всех. <b>Мебель с прошлым</b> — только у вас.
         </blockquote>
-        <figcaption className="reveal">ПАТИНА · салон винтажной мебели</figcaption>
+        <figcaption className="reveal">ЭПОХА · винтажная мебель</figcaption>
       </figure>
     </>
   );
 }
 
-/* ── Страница товара ── */
-function LotPage({ lot, cart }: { lot: Lot; cart: ReturnType<typeof useCart> }) {
+/* ── карточка товара ── */
+function LotPage({ lot, favs, cart }: { lot: Lot; favs: Store; cart: Store }) {
   const related = LOTS.filter((l) => l.cat === lot.cat && l.id !== lot.id).slice(0, 3);
-  const inCart = cart.ids.includes(lot.id);
+  const inCart = cart.has(lot.id);
   return (
     <div className="pg">
       <div className="wrap">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Каталог</a>
+          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Витрина</a>
+          <span>/</span>
+          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{CATEGORIES[lot.cat]}</a>
           <span>/</span>
           <b>Лот №{lot.n}</b>
         </nav>
@@ -352,7 +607,7 @@ function LotPage({ lot, cart }: { lot: Lot; cart: ReturnType<typeof useCart> }) 
             </div>
             <div className="pd-ctas">
               {lot.sold ? (
-                <a className="btn-ghost" href="mailto:salon@patina.example?subject=Подбор похожего предмета">
+                <a className="btn-ghost" href="mailto:hello@epoha.example?subject=Подбор похожего предмета">
                   Запросить похожий
                 </a>
               ) : inCart ? (
@@ -362,7 +617,7 @@ function LotPage({ lot, cart }: { lot: Lot; cart: ReturnType<typeof useCart> }) 
               ) : (
                 <>
                   <button className="btn-brass" onClick={() => cart.add(lot.id)}>
-                    Добавить в корзину
+                    В корзину
                   </button>
                   <button
                     className="btn-ghost"
@@ -375,11 +630,18 @@ function LotPage({ lot, cart }: { lot: Lot; cart: ReturnType<typeof useCart> }) 
                   </button>
                 </>
               )}
+              <button
+                className={`pd-fav${favs.has(lot.id) ? " on" : ""}`}
+                onClick={() => favs.toggle(lot.id)}
+                aria-label="В избранное"
+              >
+                <Heart on={favs.has(lot.id)} />
+              </button>
             </div>
             <ul className="pd-notes">
               <li>Видеообзор состояния — по запросу перед покупкой</li>
-              <li>Доставка по Европе · 7–14 дней · бережная упаковка</li>
-              <li>Оплата после подтверждения наличия менеджером</li>
+              <li>Доставка по Европе · 7–14 дней · обрешётка и страховка</li>
+              <li>Оплата после подтверждения заказа менеджером</li>
             </ul>
           </aside>
         </div>
@@ -395,7 +657,7 @@ function LotPage({ lot, cart }: { lot: Lot; cart: ReturnType<typeof useCart> }) 
             </div>
             <div className="lots">
               {related.map((l) => (
-                <LotCard key={l.id} l={l} />
+                <LotCard key={l.id} l={l} favs={favs} cart={cart} />
               ))}
             </div>
           </section>
@@ -405,15 +667,46 @@ function LotPage({ lot, cart }: { lot: Lot; cart: ReturnType<typeof useCart> }) 
   );
 }
 
-/* ── Страница корзины ── */
-function CartPage({ cart }: { cart: ReturnType<typeof useCart> }) {
-  const items = LOTS.filter((l) => cart.ids.includes(l.id));
+/* ── избранное ── */
+function FavsPage({ favs, cart }: { favs: Store; cart: Store }) {
+  const items = LOTS.filter((l) => favs.has(l.id));
+  return (
+    <div className="pg">
+      <div className="wrap">
+        <nav className="crumbs">
+          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Витрина</a>
+          <span>/</span>
+          <b>Избранное</b>
+        </nav>
+        <h1 className="pg-title">Избранное</h1>
+        {items.length === 0 ? (
+          <div className="empty">
+            <p>Пока пусто. Отмечайте сердцем то, что легло на душу.</p>
+            <button className="btn-brass" onClick={() => go("/")}>
+              Смотреть коллекцию →
+            </button>
+          </div>
+        ) : (
+          <div className="lots">
+            {items.map((l) => (
+              <LotCard key={l.id} l={l} favs={favs} cart={cart} />
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/* ── корзина ── */
+function CartPage({ cart }: { cart: Store }) {
+  const items = LOTS.filter((l) => cart.has(l.id));
   const total = items.reduce((s, l) => s + l.price, 0);
   return (
     <div className="pg">
       <div className="wrap wrap-narrow">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Каталог</a>
+          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>Витрина</a>
           <span>/</span>
           <b>Корзина</b>
         </nav>
@@ -430,11 +723,7 @@ function CartPage({ cart }: { cart: ReturnType<typeof useCart> }) {
             <div className="cartpg-list">
               {items.map((l) => (
                 <div key={l.id} className="cartpg-item">
-                  <img
-                    src={img(l.id, 1)}
-                    alt={l.title}
-                    onClick={() => go(`/lot/${l.id}`)}
-                  />
+                  <img src={img(l.id, 1)} alt={l.title} onClick={() => go(`/lot/${l.id}`)} />
                   <div className="cartpg-info" onClick={() => go(`/lot/${l.id}`)}>
                     <strong>{l.title}</strong>
                     <small>ЛОТ №{l.n} · {l.era}</small>
@@ -470,8 +759,7 @@ function CartPage({ cart }: { cart: ReturnType<typeof useCart> }) {
                 Оформить заказ →
               </button>
               <p className="cart-note">
-                Оплата после подтверждения наличия и расчёта доставки
-                менеджером салона.
+                Оплата после подтверждения наличия и расчёта доставки менеджером.
               </p>
             </aside>
           </div>
@@ -481,29 +769,23 @@ function CartPage({ cart }: { cart: ReturnType<typeof useCart> }) {
   );
 }
 
-/* ── Оформление заказа ── */
-function CheckoutPage({ cart }: { cart: ReturnType<typeof useCart> }) {
-  const items = LOTS.filter((l) => cart.ids.includes(l.id));
+/* ── оформление ── */
+function CheckoutPage({ cart }: { cart: Store }) {
+  const items = LOTS.filter((l) => cart.has(l.id));
   const total = items.reduce((s, l) => s + l.price, 0);
-  const [form, setForm] = useState({
-    name: "",
-    contact: "",
-    city: "",
-    comment: "",
-  });
+  const [form, setForm] = useState({ name: "", contact: "", city: "", comment: "" });
   const ok = form.name.trim().length > 1 && form.contact.trim().length > 3;
 
   const submit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!ok || items.length === 0) return;
-    const order = `P-${String(Date.now()).slice(-6)}`;
+    const order = `E-${String(Date.now()).slice(-6)}`;
     const lines = items.map((l) => `• Лот №${l.n} — ${l.title} — €${fmt(l.price)}`);
     const body = encodeURIComponent(
-      `Заявка ${order}\n\nПредметы:\n${lines.join("\n")}\n\nИтого: €${fmt(total)}\n\nИмя: ${form.name}\nСвязь: ${form.contact}\nГород: ${form.city}\nКомментарий: ${form.comment}`
+      `Заказ ${order}\n\nПредметы:\n${lines.join("\n")}\n\nИтого: €${fmt(total)}\n\nИмя: ${form.name}\nСвязь: ${form.contact}\nГород: ${form.city}\nКомментарий: ${form.comment}`
     );
-    // Заявка уходит письмом; в проде здесь будет API/бот
     window.open(
-      `mailto:salon@patina.example?subject=${encodeURIComponent(`Заявка ${order} — ПАТИНА`)}&body=${body}`,
+      `mailto:hello@epoha.example?subject=${encodeURIComponent(`Заказ ${order} — ЭПОХА`)}&body=${body}`,
       "_self"
     );
     cart.clear();
@@ -565,9 +847,9 @@ function CheckoutPage({ cart }: { cart: ReturnType<typeof useCart> }) {
                 />
               </label>
               <p className="cart-note">
-                После отправки менеджер салона свяжется с вами в течение
-                рабочего дня: подтвердит наличие, пришлёт видеообзор и
-                рассчитает доставку. Оплата — только после подтверждения.
+                После отправки менеджер свяжется с вами в течение рабочего дня:
+                подтвердит наличие, пришлёт видеообзор и рассчитает доставку.
+                Оплата — только после подтверждения.
               </p>
             </div>
             <aside className="cartpg-sum">
@@ -588,7 +870,7 @@ function CheckoutPage({ cart }: { cart: ReturnType<typeof useCart> }) {
                 style={{ width: "100%", justifyContent: "center", opacity: ok ? 1 : 0.55 }}
                 disabled={!ok}
               >
-                Отправить заявку
+                Отправить заказ
               </button>
               <p className="cart-note">Нажимая, вы соглашаетесь на обработку контактных данных.</p>
             </aside>
@@ -599,21 +881,19 @@ function CheckoutPage({ cart }: { cart: ReturnType<typeof useCart> }) {
   );
 }
 
-/* ── Успех ── */
 function SuccessPage({ order }: { order: string }) {
   return (
     <div className="pg">
       <div className="wrap wrap-narrow">
         <div className="empty success">
           <span className="success-seal">ПРИНЯТО</span>
-          <h1 className="pg-title">Заявка {order} отправлена</h1>
+          <h1 className="pg-title">Заказ {order} отправлен</h1>
           <p>
-            Менеджер салона свяжется с вами в течение рабочего дня —
-            подтвердит наличие, пришлёт видеообзор предметов и рассчитает
-            доставку.
+            Менеджер свяжется с вами в течение рабочего дня — подтвердит
+            наличие, пришлёт видеообзор предметов и рассчитает доставку.
           </p>
           <button className="btn-brass" onClick={() => go("/")}>
-            Вернуться в коллекцию →
+            Вернуться на витрину →
           </button>
         </div>
       </div>
@@ -622,12 +902,35 @@ function SuccessPage({ order }: { order: string }) {
 }
 
 export default function App() {
-  const cart = useCart();
+  const cart = useStoredIds("epoha-cart");
+  const favs = useStoredIds("epoha-favs");
   const route = useRoute();
-  const [filter, setFilter] = useState<Category | "all">("all");
-  useReveal(route.view + (route.view === "home" ? filter : ""));
+  const [query, setQuery] = useState("");
+  const [cat, setCat] = useState<Category | "all">("all");
+  const [sort, setSort] = useState("new");
+  const [viewed, setViewed] = useState<number[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem("epoha-viewed") || "[]");
+    } catch {
+      return [];
+    }
+  });
 
-  const key = route.view + (route.view === "lot" ? route.lot.id : "");
+  /* журнал просмотров */
+  useEffect(() => {
+    if (route.view === "lot") {
+      setViewed((v) => {
+        const next = [route.lot.id, ...v.filter((x) => x !== route.lot.id)].slice(0, 8);
+        localStorage.setItem("epoha-viewed", JSON.stringify(next));
+        return next;
+      });
+    }
+  }, [route]);
+
+  useReveal(route.view + cat + query + sort);
+
+  const key =
+    route.view + (route.view === "lot" ? route.lot.id : "") + (route.view === "success" ? route.order : "");
   const prevKey = useRef(key);
   useEffect(() => {
     if (prevKey.current !== key) {
@@ -640,9 +943,21 @@ export default function App() {
     <>
       <div className="grain" aria-hidden="true" />
       <div className="vignette" aria-hidden="true" />
-      <Header count={cart.ids.length} />
-      {route.view === "home" && <Home filter={filter} setFilter={setFilter} />}
-      {route.view === "lot" && <LotPage lot={route.lot} cart={cart} />}
+      <Header favs={favs} cart={cart} query={query} setQuery={setQuery} cat={cat} setCat={setCat} />
+      {route.view === "home" && (
+        <Home
+          favs={favs}
+          cart={cart}
+          cat={cat}
+          setCat={setCat}
+          query={query}
+          sort={sort}
+          setSort={setSort}
+          viewed={route.view === "home" ? viewed : []}
+        />
+      )}
+      {route.view === "lot" && <LotPage lot={route.lot} favs={favs} cart={cart} />}
+      {route.view === "favs" && <FavsPage favs={favs} cart={cart} />}
       {route.view === "cart" && <CartPage cart={cart} />}
       {route.view === "checkout" && <CheckoutPage cart={cart} />}
       {route.view === "success" && <SuccessPage order={route.order} />}

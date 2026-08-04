@@ -22,6 +22,39 @@ export const CATEGORIES: Record<Category | "all", string> = {
 
 export const img = (id: number, n: 1 | 2) => `./img/lot-${id}-${n}.jpg`;
 
+/* Кураторские подборки витрины */
+export interface Collection {
+  key: string;
+  title: string;
+  hint: string;
+  cover: number; // id лота для обложки
+  ids: number[];
+}
+
+export const COLLECTIONS: Collection[] = [
+  {
+    key: "salon",
+    title: "Гостиная рококо",
+    hint: "резьба, медальоны, бархат",
+    cover: 5227354,
+    ids: [5212622, 5245111, 5254437, 5247040, 5227354],
+  },
+  {
+    key: "cabinet",
+    title: "Кабинет коллекционера",
+    hint: "кожа, красное дерево, дуб",
+    cover: 5250025,
+    ids: [5250025, 5215248, 5265275, 5250479, 5270547],
+  },
+  {
+    key: "light",
+    title: "Свет и отражения",
+    hint: "хрусталь, золочение, амальгама",
+    cover: 5243214,
+    ids: [5243214, 5228214, 5269207, 5272818, 5266899],
+  },
+];
+
 export const LOTS: Lot[] = [
   {
     id: 5212622,
