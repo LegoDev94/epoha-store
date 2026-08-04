@@ -185,7 +185,7 @@ function LotCard({ l, favs, cart }: { l: Lot; favs: Store; cart: Store }) {
         <img className="alt" src={img(l.id, 2)} alt="" loading="lazy" width={760} height={570} aria-hidden="true" />
       </div>
       <div className="lot-meta">
-        <span className="lot-n">ЛОТ №{l.n}</span>
+        <span className="lot-n">№ {l.n}</span>
         <span className="lot-era">{l.era}</span>
       </div>
       <h3 className="lot-title">{l.title}</h3>
@@ -413,7 +413,7 @@ function Home({
           </h1>
           <p className="bn-sub">
             Подлинные предметы XIX–XX веков: рококо, густавианский стиль,
-            бидермейер. Каждый лот проверен реставратором и готов к новой
+            бидермейер. Каждый предмет проверен реставратором и готов к новой
             жизни в вашем доме.
           </p>
           <div className="bn-ctas">
@@ -431,7 +431,7 @@ function Home({
             </button>
           </div>
           <div className="bn-facts">
-            <span><b>{LOTS.length}</b> лотов в наличии</span>
+            <span><b>{LOTS.length}</b> предметов в наличии</span>
             <i />
             <span><b>XIX–XX</b> век</span>
             <i />
@@ -464,7 +464,7 @@ function Home({
                 <span className="coll-text">
                   <b>{c.title}</b>
                   <i>{c.hint}</i>
-                  <u>{c.ids.length} лотов →</u>
+                  <u>{c.ids.length} предметов →</u>
                 </span>
               </button>
             ))}
@@ -551,7 +551,7 @@ function Home({
             <div className="sec-head reveal">
               <span className="sec-no">ВЫ СМОТРЕЛИ</span>
               <h2 className="sec-title" style={{ fontSize: "clamp(24px,2.6vw,36px)" }}>
-                Недавние лоты
+                Недавние предметы
               </h2>
               <i className="sec-rule" />
             </div>
@@ -586,7 +586,7 @@ function LotPage({ lot, favs, cart }: { lot: Lot; favs: Store; cart: Store }) {
           <span>/</span>
           <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{CATEGORIES[lot.cat]}</a>
           <span>/</span>
-          <b>Лот №{lot.n}</b>
+          <b>№ {lot.n}</b>
         </nav>
         <div className="pd">
           <div className="pd-gallery">
@@ -598,7 +598,7 @@ function LotPage({ lot, favs, cart }: { lot: Lot; favs: Store; cart: Store }) {
             </figure>
           </div>
           <aside className="pd-panel">
-            <span className="pd-n">ЛОТ №{lot.n} · {CATEGORIES[lot.cat].toUpperCase()}</span>
+            <span className="pd-n">№ {lot.n} · {CATEGORIES[lot.cat].toUpperCase()}</span>
             <h1 className="pd-title">{lot.title}</h1>
             <span className="pd-era">{lot.era}</span>
             <p className="pd-desc">{lot.desc}</p>
@@ -651,7 +651,7 @@ function LotPage({ lot, favs, cart }: { lot: Lot; favs: Store; cart: Store }) {
             <div className="sec-head">
               <span className="sec-no">ИЗ ТОЙ ЖЕ ВИТРИНЫ</span>
               <h2 className="sec-title" style={{ fontSize: "clamp(26px,3vw,40px)" }}>
-                Похожие лоты
+                Похожие предметы
               </h2>
               <i className="sec-rule" />
             </div>
@@ -726,7 +726,7 @@ function CartPage({ cart }: { cart: Store }) {
                   <img src={img(l.id, 1)} alt={l.title} onClick={() => go(`/lot/${l.id}`)} />
                   <div className="cartpg-info" onClick={() => go(`/lot/${l.id}`)}>
                     <strong>{l.title}</strong>
-                    <small>ЛОТ №{l.n} · {l.era}</small>
+                    <small>№ {l.n} · {l.era}</small>
                   </div>
                   <div className="cartpg-right">
                     <b>€{fmt(l.price)}</b>
@@ -780,7 +780,7 @@ function CheckoutPage({ cart }: { cart: Store }) {
     e.preventDefault();
     if (!ok || items.length === 0) return;
     const order = `E-${String(Date.now()).slice(-6)}`;
-    const lines = items.map((l) => `• Лот №${l.n} — ${l.title} — €${fmt(l.price)}`);
+    const lines = items.map((l) => `• №${l.n} — ${l.title} — €${fmt(l.price)}`);
     const body = encodeURIComponent(
       `Заказ ${order}\n\nПредметы:\n${lines.join("\n")}\n\nИтого: €${fmt(total)}\n\nИмя: ${form.name}\nСвязь: ${form.contact}\nГород: ${form.city}\nКомментарий: ${form.comment}`
     );
@@ -927,6 +927,34 @@ export default function App() {
     }
   }, [route]);
 
+
+  /* живой фон: курсор и скролл двигают латунные блики */
+  useEffect(() => {
+    let raf = 0;
+    const root = document.documentElement.style;
+    const onMove = (e: PointerEvent) => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        root.setProperty("--mx", `${(e.clientX / innerWidth - 0.5) * 46}px`);
+        root.setProperty("--my", `${(e.clientY / innerHeight - 0.5) * 46}px`);
+      });
+    };
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        raf = 0;
+        root.setProperty("--sy", `${scrollY * 0.06}px`);
+      });
+    };
+    addEventListener("pointermove", onMove, { passive: true });
+    addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      removeEventListener("pointermove", onMove);
+      removeEventListener("scroll", onScroll);
+    };
+  }, []);
+
   useReveal(route.view + cat + query + sort);
 
   const key =
@@ -941,6 +969,11 @@ export default function App() {
 
   return (
     <>
+      <div className="ibg" aria-hidden="true">
+        <i className="ibg-a" />
+        <i className="ibg-b" />
+        <i className="ibg-c" />
+      </div>
       <div className="grain" aria-hidden="true" />
       <div className="vignette" aria-hidden="true" />
       <Header favs={favs} cart={cart} query={query} setQuery={setQuery} cat={cat} setCat={setCat} />
