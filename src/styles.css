@@ -204,16 +204,16 @@ html::-webkit-scrollbar-thumb {
   padding: 11px 16px 13px;
   background: none; border: none;
   border-bottom: 2px solid transparent;
-  color: var(--muted);
-  font-family: var(--sans); font-size: 13px; font-weight: 500;
+  color: #444a39;
+  font-family: var(--sans); font-size: 13px; font-weight: 600;
   letter-spacing: 0.02em;
   cursor: pointer;
   white-space: nowrap;
   transition: color 160ms ease, border-color 160ms ease;
 }
-.hd-cat svg { width: 19px; height: 19px; }
-.hd-cat:hover { color: var(--paper); }
-.hd-cat.on { color: var(--brass-hi); border-bottom-color: var(--brass); }
+.hd-cat svg { width: 19px; height: 19px; color: var(--brass-sh); }
+.hd-cat:hover { color: #1e2016; }
+.hd-cat.on { color: var(--brass-sh); border-bottom-color: var(--brass-sh); }
 
 /* ── Баннер-витрина ────────────────────────────────────────────── */
 .bn {
