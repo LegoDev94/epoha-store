@@ -165,7 +165,9 @@ async function importFromUrl(url) {
     let head = "";
     let rest = "";
     for (const part of parts) {
-      if (head.length < 40 || head.length + part.length <= 74) head += part;
+      /* как только фраза ушла в описание, туда же идут и следующие —
+         иначе хвост склеивается с началом и рвёт смысл */
+      if (!rest && (head.length < 40 || head.length + part.length <= 74)) head += part;
       else rest += part;
     }
     shortTitle = head.trim();
