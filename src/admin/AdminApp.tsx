@@ -115,7 +115,10 @@ function Editor({
   api: ReturnType<typeof useApi>;
 }) {
   const [p, setP] = useState<Lot>(structuredClone(item));
-  const [tab, setTab] = useState<Lang>("lv");
+  /* Открываем вкладку языка, на котором карточка уже заполнена */
+  const [tab, setTab] = useState<Lang>(
+    () => (["lv", "en", "ru"] as Lang[]).find((l) => item.tr[l]?.title.trim()) || "lv"
+  );
   const [busy, setBusy] = useState<false | "save" | "tr" | "up">(false);
   const [imgUrl, setImgUrl] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);

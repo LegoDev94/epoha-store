@@ -161,10 +161,12 @@ async function importFromUrl(url) {
     images,
     cat: guessCat(title, desc),
     priceHint,
+    /* Исходник аукциона — английский; латышская и русская версии
+       допереводятся автоматически при сохранении карточки. */
     tr: {
-      lv: { title, era: "", desc },
+      lv: { title: "", era: "", desc: "" },
       en: { title, era: "", desc },
-      ru: { title, era: "", desc },
+      ru: { title: "", era: "", desc: "" },
     },
   };
 }
