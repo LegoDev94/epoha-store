@@ -1096,7 +1096,7 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
             <button className="btn-brass" onClick={() => go("/")}>{t("favs.go")}</button>
           </div>
         ) : (
-          <form className="ck" onSubmit={(e) => { e.preventDefault(); submit(true); }}>
+          <form className="ck" noValidate onSubmit={(e) => { e.preventDefault(); submit(true); }}>
             <div className="ck-form">
               <label className="ck-field">
                 <span>{t("ck.name")} *</span>
