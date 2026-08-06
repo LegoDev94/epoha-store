@@ -1264,7 +1264,20 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
 }
 
 function SuccessPage({ order, t }: { order: string; t: T }) {
-  const paid = location.hash.includes("paid=1");
+  const [paid, setPaid] = useState(location.hash.includes("paid=1"));
+  useEffect(() => {
+    const sid = location.hash.match(/[?&]s=(cs_[A-Za-z0-9_]+)/)?.[1];
+    if (!sid) return;
+    /* сверяем оплату на сервере: он спросит Stripe напрямую */
+    fetch(`api/orders/${order}/confirm`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session: sid }),
+    })
+      .then((r) => r.json())
+      .then((d) => setPaid(Boolean(d.paid)))
+      .catch(() => {});
+  }, [order]);
   return (
     <div className="pg">
       <div className="wrap wrap-narrow">

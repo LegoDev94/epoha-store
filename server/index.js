@@ -355,7 +355,10 @@ async function stripeSession(order) {
   if (!key) return null;
   const form = new URLSearchParams();
   form.set("mode", "payment");
-  form.set("success_url", `${BASE_URL}/#/success/${order.order}?paid=1`);
+  form.set(
+    "success_url",
+    `${BASE_URL}/#/success/${order.order}?paid=1&s={CHECKOUT_SESSION_ID}`
+  );
   form.set("cancel_url", `${BASE_URL}/#/checkout`);
   form.set("metadata[order]", order.order);
   if (order.email) form.set("customer_email", order.email);
@@ -444,6 +447,38 @@ app.post("/api/orders", async (req, res) => {
       }
     }
     res.json({ order: order.order, total: order.total, payUrl, payError });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+/* Возврат из Stripe: сверяем сессию напрямую с их API — клиенту не
+   доверяем, статус ставим только по ответу Stripe. */
+app.post("/api/orders/:num/confirm", async (req, res) => {
+  try {
+    const key = process.env.STRIPE_SECRET_KEY;
+    const sid = String(req.body?.session || "").trim();
+    if (!key || !/^cs_/.test(sid)) return res.status(400).json({ error: "no session" });
+
+    const r = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sid)}`, {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    if (!r.ok) return res.status(400).json({ error: `stripe ${r.status}` });
+    const sess = await r.json();
+    const num = req.params.num;
+    if (sess?.metadata?.order !== num) return res.status(400).json({ error: "order mismatch" });
+
+    const paid = sess.payment_status === "paid";
+    const list = await readJson(ORDERS, []);
+    const idx = list.findIndex((o) => o.order === num);
+    if (idx >= 0 && paid && list[idx].status !== "paid") {
+      list[idx].status = "paid";
+      list[idx].paidAt = new Date().toISOString();
+      list[idx].stripe = sess.id;
+      await writeJson(ORDERS, list);
+      notifyOwner(list[idx]);
+    }
+    res.json({ paid });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
