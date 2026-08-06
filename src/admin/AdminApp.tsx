@@ -167,6 +167,11 @@ function Editor({
     setBusy("save");
     try {
       const saved = await api("api/admin/products", { method: "POST", body: JSON.stringify(p) });
+      if (saved?.translateError)
+        alert(`Товар сохранён, но авто-перевод не сработал:
+${saved.translateError}
+
+Заполните языки вручную или нажмите «Перевести».`);
       onSave(saved);
     } catch (e) {
       alert(String((e as Error).message));

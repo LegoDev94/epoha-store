@@ -175,6 +175,31 @@ async function importFromUrl(url) {
    Ключ живёт только в окружении сервера: DEEPSEEK_API_KEY. */
 const LANG_NAME = { lv: "Latvian", en: "English", ru: "Russian" };
 
+/** Достаёт первый полный JSON-объект: модель иногда добавляет
+    markdown-обёртку или пояснение после ответа. */
+function extractJson(raw) {
+  const s = String(raw).replace(/```(?:json)?/gi, "").trim();
+  try {
+    return JSON.parse(s);
+  } catch {
+    /* ищем сбалансированный объект, не считая скобки внутри строк */
+  }
+  const start = s.indexOf("{");
+  if (start < 0) throw new Error("Модель вернула ответ без JSON");
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (esc) esc = false;
+    else if (ch === "\\") esc = true;
+    else if (ch === '"') inStr = !inStr;
+    else if (!inStr && ch === "{") depth++;
+    else if (!inStr && ch === "}" && --depth === 0) return JSON.parse(s.slice(start, i + 1));
+  }
+  throw new Error("Не удалось разобрать ответ переводчика");
+}
+
 async function translateCard(src, from) {
   const key = process.env.DEEPSEEK_API_KEY;
   if (!key) throw new Error("DEEPSEEK_API_KEY не задан на сервере");
@@ -209,7 +234,7 @@ async function translateCard(src, from) {
   if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 200)}`);
   const data = await res.json();
   const raw = data?.choices?.[0]?.message?.content || "{}";
-  const parsed = JSON.parse(String(raw).replace(/^```(?:json)?|```$/g, "").trim());
+  const parsed = extractJson(raw);
   const norm = (o = {}) => ({
     title: String(o.title || "").trim(),
     era: String(o.era || "").trim(),
@@ -279,6 +304,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
   if (!p.id) p.id = Date.now();
 
   /* Публикуем сразу на трёх языках: пустые версии переводим сами. */
+  let translateError = "";
   const from = pickSource(p.tr);
   const missing = ["lv", "en", "ru"].filter((l) => !(p.tr?.[l]?.title || "").trim());
   if (from && missing.length && process.env.DEEPSEEK_API_KEY) {
@@ -286,7 +312,8 @@ app.post("/api/admin/products", auth, async (req, res) => {
       const done = await translateCard(p.tr[from], from);
       for (const l of missing) p.tr[l] = { ...done[l] };
     } catch (e) {
-      console.warn("[epoha] авто-перевод не удался:", String(e.message || e));
+      translateError = String(e.message || e);
+      console.warn("[epoha] авто-перевод не удался:", translateError);
     }
   }
   const list = await loadProducts();
@@ -311,7 +338,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
   if (idx >= 0) list[idx] = clean;
   else list.unshift(clean);
   await saveProducts(list);
-  res.json(clean);
+  res.json(translateError ? { ...clean, translateError } : clean);
 });
 
 app.delete("/api/admin/products/:id", auth, async (req, res) => {
