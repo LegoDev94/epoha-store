@@ -1232,11 +1232,13 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
                 <span>{t("cart.total")}</span>
                 <b>€{fmt(total)}</b>
               </div>
+              {/* Кнопки остаются активными: по клику показываем, что именно
+                  не заполнено, вместо мёртвой кнопки без объяснения */}
               <button
                 type="submit"
                 className="btn-brass"
-                style={{ width: "100%", justifyContent: "center", opacity: ok ? 1 : 0.55 }}
-                disabled={!ok || busy}
+                style={{ width: "100%", justifyContent: "center", opacity: ok ? 1 : 0.7 }}
+                disabled={busy}
               >
                 {busy ? "…" : t("ck.payCard")}
               </button>
@@ -1244,10 +1246,13 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
                 type="button"
                 className="btn-ghost ck-later"
                 onClick={() => submit(false)}
-                disabled={!ok || busy}
+                disabled={busy}
               >
                 {t("ck.payLater")}
               </button>
+              {!ok && Object.keys(touched).length > 0 && (
+                <p className="ck-form-err">{t("ck.fixFields")}</p>
+              )}
               <p className="cart-note">{t("ck.payHint")}</p>
               <p className="cart-note">{t("ck.agree")}</p>
             </aside>

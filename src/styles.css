@@ -1501,3 +1501,13 @@ html::-webkit-scrollbar-thumb {
   transition: background 180ms ease, border-color 180ms ease;
 }
 .ck-pick-links a:hover { background: rgba(122, 97, 54, 0.12); border-color: var(--brass-sh); }
+.ck-form-err {
+  margin-top: 8px;
+  padding: 9px 12px;
+  border-radius: 8px;
+  background: rgba(176, 83, 47, 0.1);
+  border: 1px solid rgba(176, 83, 47, 0.3);
+  color: #8d3f1f;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
