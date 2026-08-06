@@ -291,30 +291,32 @@
  },
  {
   "id": 5272818,
-  "n": "11",
+  "n": "99",
   "cat": "mirror",
-  "price": 240,
+  "price": 265,
   "sold": false,
   "images": [
-   "./img/lot-5272818-1.jpg",
-   "./img/lot-5272818-2.jpg"
+   "/uploads/5272818-1.jpg",
+   "/uploads/5272818-2.jpg",
+   "/uploads/5272818-3.jpg",
+   "/uploads/5272818-4.jpg"
   ],
-  "source": "https://auctionet.com/en/5272818",
+  "source": "https://auctionet.com/en/5272818-mirror-gilt-gustavian-style",
   "tr": {
    "lv": {
-    "title": "Zeltīts spogulis",
-    "era": "Gustava stils",
-    "desc": "Zeltīts rāmis ar lakonisku profilu. Kompakts formāts — priekšnamam, guļamistabai, šaurai sienai. Dzīvs zeltījums ar atturīgu patinu, bez jaunuma spīduma."
+    "title": "SPOGULIS, apzeltīts, Gustava stilā.",
+    "era": "",
+    "desc": "101 x 47 cm"
    },
    "en": {
-    "title": "Gilded mirror",
-    "era": "Gustavian style",
-    "desc": "A gilded frame with a laconic profile. Compact — for a hallway, a bedroom, a narrow wall. Living gilding with restrained patina, none of that new-made glare."
+    "title": "MIRROR, gilt, Gustavian style.",
+    "era": "",
+    "desc": "101 x 47 cm"
    },
    "ru": {
-    "title": "Зеркало золочёное",
-    "era": "Густавианский стиль",
-    "desc": "Золочёная рама с лаконичным профилем. Компактный формат — для прихожей, спальни, простенка. Живое золото со сдержанной патиной, без новодельного блеска."
+    "title": "ЗЕРКАЛО, позолоченное, в густавианском стиле.",
+    "era": "",
+    "desc": "101 x 47 см"
    }
   }
  },

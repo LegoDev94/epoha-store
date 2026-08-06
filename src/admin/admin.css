@@ -357,3 +357,14 @@
 .adm-tr:hover { background: rgba(169, 138, 80, 0.22) !important; }
 .adm-tr:disabled { opacity: 0.6; }
 .adm-foot-hint { margin-right: auto; color: var(--a-dim); font-size: 12px; }
+
+.adm-note {
+  margin-bottom: 16px;
+  padding: 10px 14px;
+  border-radius: 8px;
+  background: rgba(176, 83, 47, 0.1);
+  border: 1px solid rgba(176, 83, 47, 0.3);
+  color: #8d3f1f;
+  font-size: 13px;
+  line-height: 1.5;
+}

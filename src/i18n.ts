@@ -9,9 +9,9 @@ export const LANGS: { code: Lang; label: string; full: string }[] = [
 type Dict = Record<string, string>;
 
 const lv: Dict = {
-  "meta.title": "EPOHA — vintage mēbeles ar vēsturi",
+  "meta.title": "VINTAGE MĒBELES — antīkas mēbeles ar vēsturi",
   "meta.desc":
-    "EPOHA — vintage un antīku mēbeļu veikals: rokoko, Gustava stils, bīdermeiers. Autentiskums, restaurācija, piegāde Eiropā.",
+    "VINTAGE MĒBELES — vintage un antīku mēbeļu veikals: rokoko, Gustava stils, bīdermeiers. Autentiskums, restaurācija, piegāde Eiropā.",
 
   "nav.search": "Meklēt priekšmetu: rokoko, spogulis, kumode…",
   "nav.allResults": "Visi rezultāti katalogā →",
@@ -38,6 +38,9 @@ const lv: Dict = {
   "hero.factItems": "priekšmeti pieejami",
   "hero.factAge": "gs.",
   "hero.factShip": "dienu piegāde",
+  "usp.pickup": "Bezmaksas izņemšana Talsos",
+  "usp.delivery": "Piegāde līdz durvīm Latvijā — 50 €",
+  "usp.items": "priekšmeti pieejami",
   "hero.now": "Šobrīd skatlogā",
 
   "coll.kicker": "Kuratoru izlases",
@@ -59,7 +62,7 @@ const lv: Dict = {
   "sort.rich": "Dārgākie",
   "cat.empty": "Nekas nav atrasts — mēģiniet citu vaicājumu.",
 
-  "why.kicker": "Kāpēc EPOHA",
+  "why.kicker": "Kāpēc mēs",
   "why.title": "Trīs",
   "why.titleAccent": "solījumi",
   "why.1": "Autentiskums",
@@ -115,6 +118,23 @@ const lv: Dict = {
   "ck.cityPh": "Rīga, Viļņa, Berlīne…",
   "ck.comment": "Komentārs",
   "ck.commentPh": "Jautājumi par stāvokli, termiņiem, restaurāciju…",
+  "ck.email": "E-pasts",
+  "ck.emailPh": "kvitij un pasūtījuma apstiprinājumam",
+  "ck.address": "Piegādes adrese",
+  "ck.addressPh": "Iela, mājas nr., dzīvoklis, pilsēta, indekss",
+  "ck.delivery": "Saņemšana",
+  "ck.pickup": "Izņemšana noliktavā Talsos",
+  "ck.pickupNote": "bez maksas · saskaņosim laiku",
+  "ck.courier": "Piegāde līdz durvīm Latvijā",
+  "ck.courierNote": "+50 € · 2–5 darba dienas",
+  "ck.free": "bez maksas",
+  "ck.payCard": "Apmaksāt ar karti →",
+  "ck.payLater": "Noformēt bez apmaksas",
+  "ck.noStripe": "Apmaksa ar karti vēl tiek pieslēgta. Pasūtījums ir reģistrēts — sazināsimies un vienosimies par apmaksu.",
+  "ck.payHint": "Droša apmaksa caur Stripe. Pasūtījums tiek reģistrēts uzreiz — arī tad, ja apmaksu veiksiet vēlāk.",
+  "ok.paid": "Apmaksāts",
+  "ok.unpaid": "Gaida apmaksu",
+  "ok.textPaid": "Paldies! Apmaksa saņemta. Sazināsimies par piegādes laiku tuvākajā darba dienā.",
   "ck.your": "Jūsu pasūtījums",
   "ck.send": "Nosūtīt pasūtījumu",
   "ck.note":
@@ -135,13 +155,13 @@ const lv: Dict = {
   "ftr.rights": "Demonstrācijas skatlogs",
   "ftr.by": "Dizains un izstrāde —",
   "wa.label": "Rakstīt WhatsApp",
-  "wa.hello": "Sveiki! Interesē priekšmets no EPOHA skatloga",
+  "wa.hello": "Sveiki! Interesē priekšmets no VINTAGE MĒBELES skatloga",
 };
 
 const en: Dict = {
-  "meta.title": "EPOHA — vintage furniture with a history",
+  "meta.title": "VINTAGE MĒBELES — antique furniture with a history",
   "meta.desc":
-    "EPOHA — a shop of vintage and antique furniture: rococo, Gustavian, Biedermeier. Authenticity, restoration, delivery across Europe.",
+    "VINTAGE MĒBELES — a shop of vintage and antique furniture: rococo, Gustavian, Biedermeier. Authenticity, restoration, delivery across Europe.",
 
   "nav.search": "Find a piece: rococo, mirror, chest…",
   "nav.allResults": "All results in the catalogue →",
@@ -168,6 +188,9 @@ const en: Dict = {
   "hero.factItems": "pieces in stock",
   "hero.factAge": "century",
   "hero.factShip": "days delivery",
+  "usp.pickup": "Free pickup in Talsi",
+  "usp.delivery": "Door-to-door delivery in Latvia — 50 €",
+  "usp.items": "pieces in stock",
   "hero.now": "Now on the showcase",
 
   "coll.kicker": "Curated sets",
@@ -189,7 +212,7 @@ const en: Dict = {
   "sort.rich": "Higher price",
   "cat.empty": "Nothing found — try another query.",
 
-  "why.kicker": "Why EPOHA",
+  "why.kicker": "Why us",
   "why.title": "Three",
   "why.titleAccent": "promises",
   "why.1": "Authenticity",
@@ -245,6 +268,23 @@ const en: Dict = {
   "ck.cityPh": "Riga, Vilnius, Berlin…",
   "ck.comment": "Comment",
   "ck.commentPh": "Questions about condition, timing, restoration…",
+  "ck.email": "E-mail",
+  "ck.emailPh": "for the receipt and order confirmation",
+  "ck.address": "Delivery address",
+  "ck.addressPh": "Street, house, flat, city, postcode",
+  "ck.delivery": "Receiving",
+  "ck.pickup": "Pickup at our warehouse in Talsi",
+  "ck.pickupNote": "free of charge · we agree on a time",
+  "ck.courier": "Door-to-door delivery in Latvia",
+  "ck.courierNote": "+50 € · 2–5 business days",
+  "ck.free": "free",
+  "ck.payCard": "Pay by card →",
+  "ck.payLater": "Place order without payment",
+  "ck.noStripe": "Card payment is still being connected. Your order is registered — we will contact you to arrange payment.",
+  "ck.payHint": "Secure payment via Stripe. The order is registered immediately — even if you pay later.",
+  "ok.paid": "Paid",
+  "ok.unpaid": "Awaiting payment",
+  "ok.textPaid": "Thank you! Payment received. We will contact you about the delivery time within a working day.",
   "ck.your": "Your order",
   "ck.send": "Send the order",
   "ck.note":
@@ -265,13 +305,13 @@ const en: Dict = {
   "ftr.rights": "Demonstration showcase",
   "ftr.by": "Design and development —",
   "wa.label": "Chat on WhatsApp",
-  "wa.hello": "Hello! I am interested in a piece from the EPOHA showcase",
+  "wa.hello": "Hello! I am interested in a piece from the VINTAGE MĒBELES showcase",
 };
 
 const ru: Dict = {
-  "meta.title": "EPOHA — винтажная мебель с историей",
+  "meta.title": "VINTAGE MĒBELES — винтажная мебель с историей",
   "meta.desc":
-    "EPOHA — магазин винтажной и антикварной мебели: рококо, густавианский стиль, бидермейер. Подлинность, реставрация, доставка по Европе.",
+    "VINTAGE MĒBELES — магазин винтажной и антикварной мебели: рококо, густавианский стиль, бидермейер. Подлинность, реставрация, доставка по Европе.",
 
   "nav.search": "Найти предмет: рококо, зеркало, комод…",
   "nav.allResults": "Все результаты в каталоге →",
@@ -298,6 +338,9 @@ const ru: Dict = {
   "hero.factItems": "предметов в наличии",
   "hero.factAge": "век",
   "hero.factShip": "дней доставка",
+  "usp.pickup": "Бесплатный самовывоз в Талси",
+  "usp.delivery": "Доставка до дверей по Латвии — 50 €",
+  "usp.items": "предметов в наличии",
   "hero.now": "Сейчас на витрине",
 
   "coll.kicker": "Кураторские подборки",
@@ -319,7 +362,7 @@ const ru: Dict = {
   "sort.rich": "Дороже",
   "cat.empty": "Ничего не нашлось — попробуйте другой запрос.",
 
-  "why.kicker": "Почему EPOHA",
+  "why.kicker": "Почему мы",
   "why.title": "Три",
   "why.titleAccent": "обещания",
   "why.1": "Подлинность",
@@ -375,6 +418,23 @@ const ru: Dict = {
   "ck.cityPh": "Рига, Вильнюс, Берлин…",
   "ck.comment": "Комментарий",
   "ck.commentPh": "Вопросы о состоянии, сроках, реставрации…",
+  "ck.email": "E-mail",
+  "ck.emailPh": "для чека и подтверждения заказа",
+  "ck.address": "Адрес доставки",
+  "ck.addressPh": "Улица, дом, квартира, город, индекс",
+  "ck.delivery": "Получение",
+  "ck.pickup": "Самовывоз со склада в Талси",
+  "ck.pickupNote": "бесплатно · согласуем время",
+  "ck.courier": "Доставка до дверей по Латвии",
+  "ck.courierNote": "+50 € · 2–5 рабочих дней",
+  "ck.free": "бесплатно",
+  "ck.payCard": "Оплатить картой →",
+  "ck.payLater": "Оформить без оплаты",
+  "ck.noStripe": "Оплата картой ещё подключается. Заказ зарегистрирован — свяжемся и согласуем оплату.",
+  "ck.payHint": "Безопасная оплата через Stripe. Заказ регистрируется сразу — даже если оплатите позже.",
+  "ok.paid": "Оплачен",
+  "ok.unpaid": "Ожидает оплаты",
+  "ok.textPaid": "Спасибо! Оплата получена. Свяжемся по срокам доставки в течение рабочего дня.",
   "ck.your": "Ваш заказ",
   "ck.send": "Отправить заказ",
   "ck.note":
@@ -395,7 +455,7 @@ const ru: Dict = {
   "ftr.rights": "Демонстрационная витрина",
   "ftr.by": "Дизайн и разработка —",
   "wa.label": "Написать в WhatsApp",
-  "wa.hello": "Здравствуйте! Интересует предмет с витрины EPOHA",
+  "wa.hello": "Здравствуйте! Интересует предмет с витрины VINTAGE MĒBELES",
 };
 
 const DICTS: Record<Lang, Dict> = { lv, en, ru };

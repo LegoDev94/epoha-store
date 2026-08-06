@@ -281,11 +281,196 @@ const upload = multer({
 
 app.get("/api/products", async (_req, res) => res.json(await loadProducts()));
 
+/* ── Заказ: сначала регистрируем, потом ведём на оплату ──
+   Суммы считает сервер по своему каталогу — клиенту не доверяем. */
+const DELIVERY_FEE = Number(process.env.DELIVERY_FEE || 50);
+const BASE_URL = process.env.BASE_URL || "http://72.62.112.227:8080";
+
+async function notifyOwner(order) {
+  const lines = order.items.map((i) => `• №${i.n} ${i.title} — €${i.price}`).join("\n");
+  const text = [
+    `НОВЫЙ ЗАКАЗ ${order.order}`,
+    `${order.name} · ${order.contact}${order.email ? " · " + order.email : ""}`,
+    order.delivery === "courier"
+      ? `Доставка до дверей (+€${order.deliveryFee}): ${order.address}`
+      : "Самовывоз со склада в Талси (бесплатно)",
+    order.comment ? `Комментарий: ${order.comment}` : "",
+    "",
+    lines,
+    `ИТОГО: €${order.total} · ${order.status === "paid" ? "оплачен" : "ожидает оплаты"}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const tg = process.env.TELEGRAM_BOT_TOKEN;
+  const chat = process.env.TELEGRAM_CHAT_ID;
+  if (tg && chat) {
+    try {
+      await fetch(`https://api.telegram.org/bot${tg}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chat, text }),
+      });
+    } catch (e) {
+      console.warn("[vm] telegram:", String(e.message || e));
+    }
+  }
+  const resend = process.env.RESEND_API_KEY;
+  const to = process.env.ORDER_EMAIL;
+  if (resend && to) {
+    try {
+      await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
+        body: JSON.stringify({
+          from: process.env.ORDER_FROM || "orders@vintagemebeles.lv",
+          to,
+          subject: `Заказ ${order.order} — €${order.total}`,
+          text,
+        }),
+      });
+    } catch (e) {
+      console.warn("[vm] resend:", String(e.message || e));
+    }
+  }
+  if (!tg && !resend) console.log("[vm] заказ (уведомления не настроены):\n" + text);
+}
+
+async function stripeSession(order) {
+  const key = process.env.STRIPE_SECRET_KEY;
+  if (!key) return null;
+  const form = new URLSearchParams();
+  form.set("mode", "payment");
+  form.set("success_url", `${BASE_URL}/#/success/${order.order}?paid=1`);
+  form.set("cancel_url", `${BASE_URL}/#/checkout`);
+  form.set("metadata[order]", order.order);
+  if (order.email) form.set("customer_email", order.email);
+  order.items.forEach((it, i) => {
+    form.set(`line_items[${i}][quantity]`, "1");
+    form.set(`line_items[${i}][price_data][currency]`, "eur");
+    form.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(it.price * 100)));
+    form.set(`line_items[${i}][price_data][product_data][name]`, `№${it.n} ${it.title}`.slice(0, 120));
+  });
+  if (order.deliveryFee > 0) {
+    const i = order.items.length;
+    form.set(`line_items[${i}][quantity]`, "1");
+    form.set(`line_items[${i}][price_data][currency]`, "eur");
+    form.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(order.deliveryFee * 100)));
+    form.set(`line_items[${i}][price_data][product_data][name]`, "Piegade lidz durvim Latvija");
+  }
+  const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${key}`,
+      "Content-Type": "application/x-www-form-urlencoded",
+    },
+    body: form,
+  });
+  if (!res.ok) throw new Error(`Stripe ${res.status}: ${(await res.text()).slice(0, 180)}`);
+  return (await res.json()).url || null;
+}
+
 app.post("/api/orders", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const catalog = await loadProducts();
+    const items = (Array.isArray(b.items) ? b.items : [])
+      .map((id) => catalog.find((p) => p.id === Number(id)))
+      .filter(Boolean)
+      .map((p) => ({
+        id: p.id,
+        n: p.n,
+        price: Number(p.price) || 0,
+        title: p.tr?.lv?.title || p.tr?.en?.title || `#${p.id}`,
+      }));
+    if (!items.length) return res.status(400).json({ error: "Grozs ir tukss" });
+    if (!String(b.name || "").trim() || !String(b.contact || "").trim())
+      return res.status(400).json({ error: "Nepieciesams vards un kontakts" });
+
+    const delivery = b.delivery === "courier" ? "courier" : "pickup";
+    if (delivery === "courier" && !String(b.address || "").trim())
+      return res.status(400).json({ error: "Nepieciesama piegades adrese" });
+
+    const subtotal = items.reduce((s, i) => s + i.price, 0);
+    const deliveryFee = delivery === "courier" ? DELIVERY_FEE : 0;
+    const order = {
+      order: `VM-${String(Date.now()).slice(-6)}`,
+      at: new Date().toISOString(),
+      status: "new",
+      items,
+      subtotal,
+      deliveryFee,
+      total: subtotal + deliveryFee,
+      delivery,
+      name: String(b.name).trim(),
+      contact: String(b.contact).trim(),
+      email: String(b.email || "").trim(),
+      address: String(b.address || "").trim(),
+      comment: String(b.comment || "").trim(),
+      lang: b.lang || "lv",
+    };
+
+    const list = await readJson(ORDERS, []);
+    list.unshift(order);
+    await writeJson(ORDERS, list.slice(0, 500));
+    notifyOwner(order);
+
+    let payUrl = null;
+    let payError = "";
+    if (b.pay) {
+      try {
+        payUrl = await stripeSession(order);
+        if (!payUrl) payError = "no-stripe";
+      } catch (e) {
+        payError = String(e.message || e);
+        console.warn("[vm] stripe:", payError);
+      }
+    }
+    res.json({ order: order.order, total: order.total, payUrl, payError });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+/* Stripe помечает заказ оплаченным через вебхук */
+app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
+  const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  try {
+    const raw = req.body.toString("utf8");
+    if (secret) {
+      const sig = req.get("stripe-signature") || "";
+      const ts = sig.match(/t=(\d+)/)?.[1] || "";
+      const v1 = sig.match(/v1=([a-f0-9]+)/)?.[1] || "";
+      const expected = crypto.createHmac("sha256", secret).update(`${ts}.${raw}`).digest("hex");
+      if (!v1 || v1.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(expected)))
+        return res.status(400).send("bad signature");
+    }
+    const event = JSON.parse(raw);
+    if (event.type === "checkout.session.completed") {
+      const num = event.data?.object?.metadata?.order;
+      const list = await readJson(ORDERS, []);
+      const idx = list.findIndex((o) => o.order === num);
+      if (idx >= 0) {
+        list[idx].status = "paid";
+        list[idx].paidAt = new Date().toISOString();
+        await writeJson(ORDERS, list);
+        notifyOwner(list[idx]);
+      }
+    }
+    res.json({ received: true });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/* Ручная отметка статуса заказа из админки */
+app.post("/api/admin/orders/:num", auth, async (req, res) => {
   const list = await readJson(ORDERS, []);
-  list.unshift({ ...req.body, at: new Date().toISOString() });
-  await writeJson(ORDERS, list.slice(0, 500));
-  res.json({ ok: true });
+  const idx = list.findIndex((o) => o.order === req.params.num);
+  if (idx < 0) return res.status(404).json({ error: "not found" });
+  list[idx].status = String(req.body?.status || list[idx].status);
+  await writeJson(ORDERS, list);
+  res.json(list[idx]);
 });
 
 app.post("/api/admin/login", (req, res) => {

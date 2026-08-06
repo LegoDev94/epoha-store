@@ -83,7 +83,7 @@ function Login({ onIn }: { onIn: (t: string) => void }) {
   return (
     <div className="adm-login">
       <form onSubmit={submit}>
-        <h1>EPOHA · админка</h1>
+        <h1>VINTAGE MĒBELES · админка</h1>
         <input
           type="password"
           value={pw}
@@ -106,11 +106,13 @@ function Login({ onIn }: { onIn: (t: string) => void }) {
 /* ── редактор товара ── */
 function Editor({
   item,
+  note,
   onClose,
   onSave,
   api,
 }: {
   item: Lot;
+  note?: string;
   onClose: () => void;
   onSave: (l: Lot) => void;
   api: ReturnType<typeof useApi>;
@@ -192,6 +194,7 @@ ${saved.translateError}
         </header>
 
         <div className="adm-modal-body">
+          {note && <p className="adm-note">{note}</p>}
           <div className="adm-grid">
             <label className="adm-f">
               <span>Номер витрины</span>
@@ -332,6 +335,7 @@ export default function AdminApp() {
   const [tab, setTab] = useState<"goods" | "orders">("goods");
   const [edit, setEdit] = useState<Lot | null>(null);
   const [url, setUrl] = useState("");
+  const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [q, setQ] = useState("");
 
@@ -361,6 +365,12 @@ export default function AdminApp() {
     setBusy("Тянем данные со страницы…");
     try {
       const draft = await api("api/admin/import", { method: "POST", body: JSON.stringify({ url: url.trim() }) });
+      const dup = items.find((i) => i.id === draft.id);
+      setNote(
+        dup
+          ? `Этот предмет уже есть в каталоге под № ${dup.n} — сохранение обновит существующую карточку.`
+          : ""
+      );
       const base = empty();
       setEdit({
         ...base,
@@ -385,7 +395,7 @@ export default function AdminApp() {
   return (
     <div className="adm">
       <header className="adm-top">
-        <b>EPOHA · админка</b>
+        <b>VINTAGE MĒBELES · админка</b>
         <nav>
           <button className={tab === "goods" ? "on" : ""} onClick={() => setTab("goods")}>
             Товары <i>{items.length}</i>
@@ -431,7 +441,7 @@ export default function AdminApp() {
                 (подставим ×3 от эстимейта) и перевести карточку. {busy}
               </p>
             </div>
-            <button className="adm-btn adm-ghost" onClick={() => setEdit(empty())}>
+            <button className="adm-btn adm-ghost" onClick={() => { setNote(""); setEdit(empty()); }}>
               + Добавить вручную
             </button>
           </section>
@@ -461,7 +471,7 @@ export default function AdminApp() {
                   <b>€{l.price}</b>
                   {l.sold && <span className="adm-sold">продано</span>}
                   <div>
-                    <button className="adm-btn adm-btn-sm" onClick={() => setEdit(l)}>
+                    <button className="adm-btn adm-btn-sm" onClick={() => { setNote(""); setEdit(l); }}>
                       Изменить
                     </button>
                     <button className="adm-btn adm-btn-sm adm-danger" onClick={() => remove(l)}>
@@ -500,10 +510,15 @@ export default function AdminApp() {
       {edit && (
         <Editor
           item={edit}
+          note={note}
           api={api}
-          onClose={() => setEdit(null)}
+          onClose={() => {
+            setEdit(null);
+            setNote("");
+          }}
           onSave={() => {
             setEdit(null);
+            setNote("");
             load();
           }}
         />

@@ -32,7 +32,7 @@ function parseRoute(): Route {
   if (h.startsWith("#/cart")) return { view: "cart" };
   if (h.startsWith("#/checkout")) return { view: "checkout" };
   if (h.startsWith("#/admin")) return { view: "admin" };
-  const s = h.match(/^#\/success\/([A-Z0-9-]+)/);
+  const s = h.match(/^#\/success\/([A-Za-z0-9-]+)/);
   if (s) return { view: "success", order: s[1] };
   return { view: "home" };
 }
@@ -474,7 +474,7 @@ function Header({
               <button className="mn-link" onClick={() => { setMenu(false); go("/cart"); }}>
                 {t("nav.cart")}{cart.ids.length > 0 && ` · ${cart.ids.length}`}
               </button>
-              <a className="mn-link" href="https://t.me/epoha_salon" target="_blank" rel="noopener noreferrer">
+              <a className="mn-link" href="https://wa.me/37125674959" target="_blank" rel="noopener noreferrer">
                 Telegram
               </a>
             </div>
@@ -523,13 +523,13 @@ function Footer({ t }: { t: T }) {
           </div>
           <div className="ftr-col">
             <span>{t("ftr.contact")}</span>
-            <a href="mailto:hello@epoha.example">hello@epoha.example</a>
-            <a href="tel:+37120000000">+371 20 000 000</a>
-            <a href="https://t.me/epoha_salon" target="_blank" rel="noopener noreferrer">Telegram</a>
+            <a href="mailto:info@vintagemebeles.lv">info@vintagemebeles.lv</a>
+            <a href="tel:+37125674959">+371 25 674 959</a>
+            <a href="https://wa.me/37125674959" target="_blank" rel="noopener noreferrer">Telegram</a>
           </div>
         </div>
         <div className="ftr-bottom">
-          <span>© {new Date().getFullYear()} EPOHA · {t("ftr.rights")}</span>
+          <span>© {new Date().getFullYear()} VINTAGE MĒBELES · {t("ftr.rights")}</span>
           <span>
             {t("ftr.by")} <a href="https://mtbyte.io" target="_blank" rel="noopener noreferrer">METABYTE</a>
           </span>
@@ -565,15 +565,7 @@ function Home({
   t: T;
   fmt: (n: number) => string;
 }) {
-  const [slide, setSlide] = useState(0);
   useReveal(cat + sort);
-
-  const featured = useMemo(() => lots.filter((l) => !l.sold).slice(0, 3), [lots]);
-  useEffect(() => {
-    if (featured.length < 2) return;
-    const timer = setInterval(() => setSlide((s) => (s + 1) % featured.length), 5200);
-    return () => clearInterval(timer);
-  }, [featured.length]);
 
   const shown = useMemo(() => {
     let list = lots.slice();
@@ -596,41 +588,16 @@ function Home({
 
   return (
     <>
-      <section className="bn">
-        {featured.map((f, i) => (
-          <img
-            key={f.id}
-            className={`bn-img${i === slide ? " on" : ""}`}
-            src={f.images[0]}
-            alt=""
-            aria-hidden="true"
-            fetchPriority={i === 0 ? "high" : undefined}
-            loading={i === 0 ? undefined : "lazy"}
-          />
-        ))}
-        <div className="bn-shade" />
-        <div className="wrap bn-inner">
-          <p className="bn-over">{t("hero.kicker")}</p>
-          <h1 className="bn-title">
-            {t("hero.title")} <em>{t("hero.titleAccent")}</em>
-          </h1>
-          <p className="bn-sub">{t("hero.sub")}</p>
-          <div className="bn-ctas">
-            <button
-              className="btn-brass"
-              onClick={() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" })}
-            >
-              {t("hero.cta")}
-            </button>
-
-          </div>
-          <div className="bn-facts">
-            <span><b>{lots.length}</b> {t("hero.factItems")}</span>
-            <i />
-            <span><b>XIX–XX</b> {t("hero.factAge")}</span>
-            <i />
-            <span><b>7–14</b> {t("hero.factShip")}</span>
-          </div>
+      {/* Строка выгод вместо баннера: доставка — главный аргумент */}
+      <section className="usp">
+        <div className="wrap usp-row">
+          <span className="usp-item">
+            <b>{lots.length}</b> {t("usp.items")}
+          </span>
+          <span className="usp-item usp-accent">
+            <i aria-hidden="true">◆</i> {t("usp.pickup")}
+          </span>
+          <span className="usp-item">{t("usp.delivery")}</span>
         </div>
       </section>
 
@@ -1058,26 +1025,40 @@ function CartPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; lang
 
 function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; lang: Lang; t: T; fmt: (n: number) => string }) {
   const items = lots.filter((l) => cart.has(l.id));
-  const total = items.reduce((s, l) => s + l.price, 0);
-  const [form, setForm] = useState({ name: "", contact: "", city: "", comment: "" });
-  const ok = form.name.trim().length > 1 && form.contact.trim().length > 3;
+  const subtotal = items.reduce((s, l) => s + l.price, 0);
+  const [delivery, setDelivery] = useState<"pickup" | "courier">("pickup");
+  const [form, setForm] = useState({ name: "", contact: "", email: "", address: "", comment: "" });
+  const [busy, setBusy] = useState(false);
+  const fee = delivery === "courier" ? 50 : 0;
+  const total = subtotal + fee;
+  const ok =
+    form.name.trim().length > 1 &&
+    form.contact.trim().length > 3 &&
+    (delivery === "pickup" || form.address.trim().length > 5);
 
-  const submit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!ok || items.length === 0) return;
-    const order = `E-${String(Date.now()).slice(-6)}`;
-    const lines = items.map((l) => `• №${l.n} — ${(l.tr[lang] ?? l.tr.lv).title} — €${fmt(l.price)}`);
-    const body = encodeURIComponent(
-      `${order}\n\n${lines.join("\n")}\n\n${t("cart.total")}: €${fmt(total)}\n\n${t("ck.name")}: ${form.name}\n${t("ck.contact")}: ${form.contact}\n${t("ck.city")}: ${form.city}\n${t("ck.comment")}: ${form.comment}`
-    );
-    fetch("api/orders", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order, items: items.map((l) => l.id), total, ...form, lang }),
-    }).catch(() => {});
-    window.open(`mailto:hello@epoha.example?subject=${encodeURIComponent(`${order} — EPOHA`)}&body=${body}`, "_self");
-    cart.clear();
-    go(`/success/${order}`);
+  const submit = async (pay: boolean) => {
+    if (!ok || !items.length || busy) return;
+    setBusy(true);
+    try {
+      const res = await fetch("api/orders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, delivery, pay, lang, items: items.map((l) => l.id) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "error");
+      cart.clear();
+      if (data.payUrl) {
+        location.href = data.payUrl;
+        return;
+      }
+      if (pay && data.payError) alert(t("ck.noStripe"));
+      go(`/success/${data.order}`);
+    } catch (e) {
+      alert(String((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -1095,7 +1076,7 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
             <button className="btn-brass" onClick={() => go("/")}>{t("favs.go")}</button>
           </div>
         ) : (
-          <form className="ck" onSubmit={submit}>
+          <form className="ck" onSubmit={(e) => { e.preventDefault(); submit(true); }}>
             <div className="ck-form">
               <label className="ck-field">
                 <span>{t("ck.name")} *</span>
@@ -1106,15 +1087,50 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
                 <input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder={t("ck.contactPh")} required />
               </label>
               <label className="ck-field">
-                <span>{t("ck.city")}</span>
-                <input value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} placeholder={t("ck.cityPh")} />
+                <span>{t("ck.email")}</span>
+                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("ck.emailPh")} />
               </label>
+
+              <div className="ck-field">
+                <span>{t("ck.delivery")} *</span>
+                <div className="ck-ship">
+                  <button
+                    type="button"
+                    className={`ck-opt${delivery === "pickup" ? " on" : ""}`}
+                    onClick={() => setDelivery("pickup")}
+                  >
+                    <i aria-hidden="true" />
+                    <b>{t("ck.pickup")}</b>
+                    <small>{t("ck.pickupNote")}</small>
+                    <u>{t("ck.free")}</u>
+                  </button>
+                  <button
+                    type="button"
+                    className={`ck-opt${delivery === "courier" ? " on" : ""}`}
+                    onClick={() => setDelivery("courier")}
+                  >
+                    <i aria-hidden="true" />
+                    <b>{t("ck.courier")}</b>
+                    <small>{t("ck.courierNote")}</small>
+                    <u>+€50</u>
+                  </button>
+                </div>
+              </div>
+
+              {delivery === "courier" && (
+                <label className="ck-field">
+                  <span>{t("ck.address")} *</span>
+                  <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t("ck.addressPh")} required />
+                </label>
+              )}
+
               <label className="ck-field">
                 <span>{t("ck.comment")}</span>
-                <textarea rows={4} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} placeholder={t("ck.commentPh")} />
+                <textarea rows={3} value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} placeholder={t("ck.commentPh")} />
               </label>
               <p className="cart-note">{t("ck.note")}</p>
             </div>
+
             <aside className="cartpg-sum">
               <h3>{t("ck.your")}</h3>
               {items.map((l) => (
@@ -1123,13 +1139,31 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
                   <b>€{fmt(l.price)}</b>
                 </div>
               ))}
+              <div className="cartpg-row">
+                <span>{t("cart.ship")}</span>
+                <b>{fee ? `€${fmt(fee)}` : t("ck.free")}</b>
+              </div>
               <div className="cartpg-row cartpg-total">
                 <span>{t("cart.total")}</span>
                 <b>€{fmt(total)}</b>
               </div>
-              <button type="submit" className="btn-brass" style={{ width: "100%", justifyContent: "center", opacity: ok ? 1 : 0.55 }} disabled={!ok}>
-                {t("ck.send")}
+              <button
+                type="submit"
+                className="btn-brass"
+                style={{ width: "100%", justifyContent: "center", opacity: ok ? 1 : 0.55 }}
+                disabled={!ok || busy}
+              >
+                {busy ? "…" : t("ck.payCard")}
               </button>
+              <button
+                type="button"
+                className="btn-ghost ck-later"
+                onClick={() => submit(false)}
+                disabled={!ok || busy}
+              >
+                {t("ck.payLater")}
+              </button>
+              <p className="cart-note">{t("ck.payHint")}</p>
               <p className="cart-note">{t("ck.agree")}</p>
             </aside>
           </form>
@@ -1140,13 +1174,16 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
 }
 
 function SuccessPage({ order, t }: { order: string; t: T }) {
+  const paid = location.hash.includes("paid=1");
   return (
     <div className="pg">
       <div className="wrap wrap-narrow">
         <div className="empty success">
-          <span className="success-seal">{t("ok.seal")}</span>
+          <span className={`success-seal${paid ? " paid" : ""}`}>
+            {paid ? t("ok.paid") : t("ok.seal")}
+          </span>
           <h1 className="pg-title">{t("ok.title", { n: order })}</h1>
-          <p>{t("ok.text")}</p>
+          <p>{paid ? t("ok.textPaid") : t("ok.text")}</p>
           <button className="btn-brass" onClick={() => go("/")}>{t("ok.back")}</button>
         </div>
       </div>
