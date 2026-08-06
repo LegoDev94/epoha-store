@@ -1,5 +1,8 @@
 node_modules/
 dist/
-qa-*.jpg
+qa*.jpg
+data/store.json
+data/orders.json
+data/uploads/
 *.local
 .DS_Store
