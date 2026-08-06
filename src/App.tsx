@@ -1037,15 +1037,27 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
   const [delivery, setDelivery] = useState<"pickup" | "courier">("pickup");
   const [form, setForm] = useState({ name: "", contact: "", email: "", address: "", comment: "" });
   const [busy, setBusy] = useState(false);
+  const [touched, setTouched] = useState<Record<string, boolean>>({});
   const fee = delivery === "courier" ? 50 : 0;
   const total = subtotal + fee;
-  const ok =
-    form.name.trim().length > 1 &&
-    form.contact.trim().length > 3 &&
-    (delivery === "pickup" || form.address.trim().length > 5);
+
+  /* Почта и телефон обязательны — по ним менеджер связывается с покупателем */
+  const err = {
+    name: form.name.trim().length > 1 ? "" : t("ck.errName"),
+    contact: form.contact.trim().length > 3 ? "" : t("ck.errPhone"),
+    email: /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(form.email.trim()) ? "" : t("ck.errEmail"),
+    address: delivery === "pickup" || form.address.trim().length > 5 ? "" : t("ck.errAddress"),
+  };
+  const ok = !err.name && !err.contact && !err.email && !err.address;
+  const showErr = (k: keyof typeof err) => (touched[k] ? err[k] : "");
+  const mark = (k: string) => () => setTouched((s) => ({ ...s, [k]: true }));
 
   const submit = async (pay: boolean) => {
-    if (!ok || !items.length || busy) return;
+    if (!ok) {
+      setTouched({ name: true, contact: true, email: true, address: true });
+      return;
+    }
+    if (!items.length || busy) return;
     setBusy(true);
     try {
       const res = await fetch("api/orders", {
@@ -1088,15 +1100,40 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
             <div className="ck-form">
               <label className="ck-field">
                 <span>{t("ck.name")} *</span>
-                <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder={t("ck.namePh")} required />
+                <input
+                  className={showErr("name") ? "bad" : ""}
+                  value={form.name}
+                  onChange={(e) => setForm({ ...form, name: e.target.value })}
+                  onBlur={mark("name")}
+                  placeholder={t("ck.namePh")}
+                  required
+                />
+                {showErr("name") && <em className="ck-err">{showErr("name")}</em>}
               </label>
               <label className="ck-field">
                 <span>{t("ck.contact")} *</span>
-                <input value={form.contact} onChange={(e) => setForm({ ...form, contact: e.target.value })} placeholder={t("ck.contactPh")} required />
+                <input
+                  className={showErr("contact") ? "bad" : ""}
+                  value={form.contact}
+                  onChange={(e) => setForm({ ...form, contact: e.target.value })}
+                  onBlur={mark("contact")}
+                  placeholder={t("ck.contactPh")}
+                  required
+                />
+                {showErr("contact") && <em className="ck-err">{showErr("contact")}</em>}
               </label>
               <label className="ck-field">
-                <span>{t("ck.email")}</span>
-                <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder={t("ck.emailPh")} />
+                <span>{t("ck.email")} *</span>
+                <input
+                  className={showErr("email") ? "bad" : ""}
+                  type="email"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  onBlur={mark("email")}
+                  placeholder={t("ck.emailPh")}
+                  required
+                />
+                {showErr("email") && <em className="ck-err">{showErr("email")}</em>}
               </label>
 
               <div className="ck-field">
@@ -1125,10 +1162,50 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
                 </div>
               </div>
 
+              {delivery === "pickup" && (
+                <div className="ck-pick">
+                  <div className="ck-pick-main">
+                    <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6">
+                      <path d="M12 21s7-6.2 7-11a7 7 0 1 0-14 0c0 4.8 7 11 7 11Z" strokeLinejoin="round" />
+                      <circle cx="12" cy="10" r="2.6" />
+                    </svg>
+                    <span>
+                      <b>{t("ck.pickupTitle")}</b>
+                      <i>{t("ck.pickupAddr")}</i>
+                      <u>{t("ck.pickupHint")}</u>
+                    </span>
+                  </div>
+                  <div className="ck-pick-links">
+                    <a
+                      href="https://www.google.com/maps/dir/?api=1&destination=Talsi%2C+Latvia"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t("ck.route")} · Google Maps
+                    </a>
+                    <a
+                      href="https://www.waze.com/ul?ll=57.2447%2C22.5876&navigate=yes&zoom=13"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {t("ck.route")} · Waze
+                    </a>
+                  </div>
+                </div>
+              )}
+
               {delivery === "courier" && (
                 <label className="ck-field">
                   <span>{t("ck.address")} *</span>
-                  <input value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} placeholder={t("ck.addressPh")} required />
+                  <input
+                    className={showErr("address") ? "bad" : ""}
+                    value={form.address}
+                    onChange={(e) => setForm({ ...form, address: e.target.value })}
+                    onBlur={mark("address")}
+                    placeholder={t("ck.addressPh")}
+                    required
+                  />
+                  {showErr("address") && <em className="ck-err">{showErr("address")}</em>}
                 </label>
               )}
 

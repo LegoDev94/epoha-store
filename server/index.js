@@ -401,6 +401,8 @@ app.post("/api/orders", async (req, res) => {
     if (!items.length) return res.status(400).json({ error: "Grozs ir tukss" });
     if (!String(b.name || "").trim() || !String(b.contact || "").trim())
       return res.status(400).json({ error: "Nepieciesams vards un kontakts" });
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(b.email || "").trim()))
+      return res.status(400).json({ error: "Nepieciesams derigs e-pasts" });
 
     const delivery = b.delivery === "courier" ? "courier" : "pickup";
     if (delivery === "courier" && !String(b.address || "").trim())
