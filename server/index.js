@@ -66,7 +66,7 @@ const meta = (html, attr, name) => {
 const CAT_RULES = [
   ["seating", /\b(sofa|soffa|settee|couch|armchair|arm chair|chair|fauteuil|bergere|berg\u00e8re|f\u00e5t\u00f6lj|bench|stool|ottoman|d\u012bv\u0101n|kr\u0113sl|диван|кресл|стул|банкетк)/gi],
   ["mirror", /\b(mirror|spegel|spogul|зеркал)/gi],
-  ["light", /\b(chandelier|pendant|lamp|lampa|lampett|sconce|ljuskrona|lustra|люстр|светильник|бра)/gi],
+  ["light", /\b(chandelier|candelabra|candlestick|candle holder|pendant|lamp|lampa|lampett|sconce|ljuskrona|ljusstake|lustra|sveč|люстр|светильник|подсвечник|канделябр|бра)/gi],
   ["storage", /\b(chest of drawers|chest|commode|kommod|cabinet|cupboard|sideboard|drawer|byr\u00e5|dresser|bookcase|skapis|kumode|комод|шкаф|буфет)/gi],
   ["table", /\b(table|bord|galds|desk|console|секретер|стол|столик)/gi],
 ];
