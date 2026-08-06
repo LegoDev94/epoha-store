@@ -170,7 +170,29 @@ html::-webkit-scrollbar-thumb {
   border: none; cursor: pointer;
   font-family: var(--sans); font-size: 12.5px; font-weight: 600; letter-spacing: 0.06em;
 }
-.hd-actions { display: flex; gap: 10px; margin-left: auto; }
+.hd-actions { display: flex; gap: 10px; margin-left: auto; align-items: center; }
+.lang {
+  display: inline-flex;
+  border: 1px solid rgba(122, 97, 54, 0.32);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.lang button {
+  background: none;
+  border: none;
+  padding: 9px 11px;
+  color: #6c7260;
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: background 160ms ease, color 160ms ease;
+}
+.lang button + button { border-left: 1px solid rgba(122, 97, 54, 0.18); }
+.lang button:hover { color: #1e2016; }
+.lang button.on { background: linear-gradient(180deg, var(--brass-hi), var(--brass)); color: #241a0c; }
+.mn-lang { align-self: flex-start; margin-bottom: 6px; }
 .hd-act {
   position: relative;
   display: inline-flex; align-items: center; gap: 9px;
@@ -1172,6 +1194,18 @@ html::-webkit-scrollbar-thumb {
 }
 @media (max-width: 760px) {
   .hd-burger { display: inline-flex; }
+  /* На телефоне в баннере оставляем только главное: заголовок и одна кнопка */
+  .bn-cta2, .bn-card, .bn-dots { display: none; }
+  .bn-title { font-size: clamp(32px, 8.4vw, 52px); max-width: 100%; overflow-wrap: anywhere; }
+  .bn-sub { font-size: 14.5px; }
+  .hd-top { gap: 8px; }
+  .hd-actions { gap: 6px; }
+  .hd-act { padding: 9px 11px; }
+  .lang button { padding: 7px 8px; font-size: 11px; }
+  .bn-inner { padding: 44px 0 54px; }
+  .bn { min-height: 74svh; align-items: center; }
+  .hd-cart-label { display: none; }
+  .lang button { padding: 8px 9px; font-size: 11.5px; }
   .hd-cats { display: none; }
   .hd-top { flex-wrap: wrap; gap: 10px; padding: 10px 16px 12px; }
   .hd-logo { order: 2; margin-right: auto; }
@@ -1182,8 +1216,6 @@ html::-webkit-scrollbar-thumb {
   .hd-act.hd-cart { font-size: 0; gap: 0; }
   .hd-act.hd-cart svg { margin: 0; }
   .hd-act b { font-size: 11.5px; }
-  .bn { min-height: 88svh; align-items: flex-start; }
-  .bn-inner { padding: 44px 0 190px; }
 }
 @media (max-width: 560px) {
   .hero { padding-top: 96px; }

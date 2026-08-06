@@ -1,15 +1,9 @@
-/* Логотип «ЭПОХА»: сериф-вензель, в котором буква «О» — золочёное
-   овальное зеркало с бликом. Чистый SVG, масштабируется без потерь. */
+/* Логотип EPOHA: сериф-вензель, где «O» — золочёное овальное зеркало
+   с бликом амальгамы. Латиница читается во всех трёх языках. */
 
 export function Logo({ h = 34 }: { h?: number }) {
   return (
-    <svg
-      height={h}
-      viewBox="0 0 212 56"
-      fill="none"
-      role="img"
-      aria-label="ЭПОХА"
-    >
+    <svg height={h} viewBox="0 0 196 56" fill="none" role="img" aria-label="EPOHA">
       <defs>
         <linearGradient id="lg-brass" x1="0" y1="0" x2="0" y2="1">
           <stop offset="0" stopColor="#e9d097" />
@@ -25,35 +19,32 @@ export function Logo({ h = 34 }: { h?: number }) {
       <text
         x="0"
         y="43"
-        fontFamily="'Cormorant Garamond', Georgia, serif"
-        fontWeight="700"
-        fontSize="46"
-        letterSpacing="4"
+        fontFamily="'Prata', 'Cormorant Garamond', Georgia, serif"
+        fontSize="44"
+        letterSpacing="3"
         fill="currentColor"
       >
-        ЭП
+        EP
       </text>
-      {/* О — овальное зеркало в латунной раме */}
-      <g transform="translate(66 4)">
-        <ellipse cx="24" cy="24" rx="21" ry="24" fill="url(#lg-brass)" />
-        <ellipse cx="24" cy="24" rx="16.5" ry="19.5" fill="url(#lg-glass)" />
-        {/* блик амальгамы */}
+      {/* O — овальное зеркало в латунной раме */}
+      <g transform="translate(62 5)">
+        <ellipse cx="23" cy="23" rx="20" ry="23" fill="url(#lg-brass)" />
+        <ellipse cx="23" cy="23" rx="15.5" ry="18.5" fill="url(#lg-glass)" />
         <path
-          d="M14 12 C19 6.5, 28 6, 31 9 C26 9.5, 18 14, 15.5 19 C13.5 17, 13 14, 14 12 Z"
+          d="M13 11 C18 6, 27 5.6, 30 8.4 C25 9, 17.5 13.4, 15 18.2 C13 16.2, 12.3 13.2, 13 11 Z"
           fill="rgba(233, 224, 200, 0.35)"
         />
-        <circle cx="24" cy="1.5" r="2.6" fill="url(#lg-brass)" />
+        <circle cx="23" cy="1" r="2.5" fill="url(#lg-brass)" />
       </g>
       <text
-        x="118"
+        x="110"
         y="43"
-        fontFamily="'Cormorant Garamond', Georgia, serif"
-        fontWeight="700"
-        fontSize="46"
-        letterSpacing="4"
+        fontFamily="'Prata', 'Cormorant Garamond', Georgia, serif"
+        fontSize="44"
+        letterSpacing="3"
         fill="currentColor"
       >
-        ХА
+        HA
       </text>
     </svg>
   );

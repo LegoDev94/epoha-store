@@ -1,16 +1,19 @@
 {
-  "name": "patina-vintage",
+  "name": "epoha-store",
   "private": true,
   "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "node server/index.js"
   },
   "dependencies": {
     "react": "^19.2.0",
-    "react-dom": "^19.2.0"
+    "react-dom": "^19.2.0",
+    "express": "^4.21.2",
+    "multer": "^2.0.2"
   },
   "devDependencies": {
     "@types/react": "^19.2.0",
