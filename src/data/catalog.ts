@@ -17,6 +17,7 @@ export interface Lot {
   sold?: boolean;
   images: string[];
   source?: string;
+  createdAt?: string;
   tr: Record<Lang, Tr>;
 }
 

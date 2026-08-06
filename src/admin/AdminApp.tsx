@@ -367,6 +367,16 @@ export default function AdminApp() {
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState("");
   const [q, setQ] = useState("");
+  const [fCat, setFCat] = useState("all");
+  const [fSort, setFSort] = useState("new");
+  const [fMin, setFMin] = useState("");
+  const [fMax, setFMax] = useState("");
+  const [oq, setOq] = useState("");
+  const [oStatus, setOStatus] = useState("all");
+  const [oDelivery, setODelivery] = useState("all");
+  const [oSort, setOSort] = useState("new");
+  const [oMin, setOMin] = useState("");
+  const [oMax, setOMax] = useState("");
 
   const load = useCallback(() => {
     fetch("api/products")
@@ -380,12 +390,44 @@ export default function AdminApp() {
   }, [token, tab, api]);
 
   const shown = useMemo(() => {
+    let list = items.slice();
     const s = q.trim().toLowerCase();
-    if (!s) return items;
-    return items.filter((i) =>
-      `${i.n} ${i.tr.lv.title} ${i.tr.en.title} ${i.tr.ru.title}`.toLowerCase().includes(s)
-    );
-  }, [items, q]);
+    if (s)
+      list = list.filter((i) =>
+        `${i.n} ${i.tr.lv.title} ${i.tr.en.title} ${i.tr.ru.title}`.toLowerCase().includes(s)
+      );
+    if (fCat !== "all") list = list.filter((i) => i.cat === fCat);
+    const min = Number(fMin) || 0;
+    const max = Number(fMax) || Infinity;
+    list = list.filter((i) => i.price >= min && i.price <= max);
+    const ts = (i: Lot) => (i.createdAt ? Date.parse(i.createdAt) : 0);
+    if (fSort === "new") list.sort((a, b) => ts(b) - ts(a));
+    if (fSort === "old") list.sort((a, b) => ts(a) - ts(b));
+    if (fSort === "cheap") list.sort((a, b) => a.price - b.price);
+    if (fSort === "rich") list.sort((a, b) => b.price - a.price);
+    return list;
+  }, [items, q, fCat, fSort, fMin, fMax]);
+
+  const shownOrders = useMemo(() => {
+    let list = (orders as unknown as OrderView[]).slice();
+    const s = oq.trim().toLowerCase();
+    if (s)
+      list = list.filter((o) =>
+        `${o.order} ${o.name || ""} ${o.email || ""} ${o.contact || ""} ${o.address || ""}`
+          .toLowerCase()
+          .includes(s)
+      );
+    if (oStatus !== "all") list = list.filter((o) => (o.status || "new") === oStatus);
+    if (oDelivery !== "all") list = list.filter((o) => o.delivery === oDelivery);
+    const min = Number(oMin) || 0;
+    const max = Number(oMax) || Infinity;
+    list = list.filter((o) => (o.total ?? 0) >= min && (o.total ?? 0) <= max);
+    if (oSort === "new") list.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+    if (oSort === "old") list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
+    if (oSort === "big") list.sort((a, b) => (b.total ?? 0) - (a.total ?? 0));
+    if (oSort === "small") list.sort((a, b) => (a.total ?? 0) - (b.total ?? 0));
+    return list;
+  }, [orders, oq, oStatus, oDelivery, oSort, oMin, oMax]);
 
   if (!token) return <Login onIn={setToken} />;
 
@@ -486,8 +528,40 @@ export default function AdminApp() {
             </button>
           </section>
 
-          <div className="adm-search">
-            <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по названию или номеру" />
+          <div className="adm-filters">
+            <input
+              className="adm-fl-search"
+              value={q}
+              onChange={(e) => setQ(e.target.value)}
+              placeholder="Поиск по названию или номеру"
+            />
+            <select value={fCat} onChange={(e) => setFCat(e.target.value)}>
+              <option value="all">Все категории</option>
+              {CATS.map((c) => (
+                <option key={c.v} value={c.v}>
+                  {c.l}
+                </option>
+              ))}
+            </select>
+            <select value={fSort} onChange={(e) => setFSort(e.target.value)}>
+              <option value="new">Сначала новые</option>
+              <option value="old">Сначала старые</option>
+              <option value="cheap">Дешевле</option>
+              <option value="rich">Дороже</option>
+            </select>
+            <div className="adm-fl-range">
+              <input type="number" value={fMin} onChange={(e) => setFMin(e.target.value)} placeholder="€ от" />
+              <input type="number" value={fMax} onChange={(e) => setFMax(e.target.value)} placeholder="€ до" />
+            </div>
+            <span className="adm-fl-count">{shown.length}</span>
+            {(q || fCat !== "all" || fSort !== "new" || fMin || fMax) && (
+              <button
+                className="adm-fl-reset"
+                onClick={() => { setQ(""); setFCat("all"); setFSort("new"); setFMin(""); setFMax(""); }}
+              >
+                ✕ сбросить
+              </button>
+            )}
           </div>
 
           <div className="adm-list">
@@ -498,6 +572,7 @@ export default function AdminApp() {
                   <b>{l.tr.lv.title || l.tr.en.title || "— без названия —"}</b>
                   <span>
                     № {l.n} · {CATS.find((c) => c.v === l.cat)?.l} · {l.images.length} фото
+                    {l.createdAt ? ` · ${new Date(l.createdAt).toLocaleDateString("ru-RU")}` : ""}
                   </span>
                   <span className="adm-langs">
                     {LANGS.map((x) => (
@@ -527,9 +602,49 @@ export default function AdminApp() {
       )}
 
       {tab === "orders" && (
+        <>
+          <div className="adm-filters">
+            <input
+              className="adm-fl-search"
+              value={oq}
+              onChange={(e) => setOq(e.target.value)}
+              placeholder="Поиск: номер, имя, почта, телефон, адрес"
+            />
+            <select value={oStatus} onChange={(e) => setOStatus(e.target.value)}>
+              <option value="all">Любой статус</option>
+              <option value="new">Новые</option>
+              <option value="paid">Оплаченные</option>
+              <option value="done">Выполненные</option>
+              <option value="cancelled">Отменённые</option>
+            </select>
+            <select value={oDelivery} onChange={(e) => setODelivery(e.target.value)}>
+              <option value="all">Любое получение</option>
+              <option value="pickup">Самовывоз</option>
+              <option value="courier">Доставка</option>
+            </select>
+            <select value={oSort} onChange={(e) => setOSort(e.target.value)}>
+              <option value="new">Сначала новые</option>
+              <option value="old">Сначала старые</option>
+              <option value="big">Сумма больше</option>
+              <option value="small">Сумма меньше</option>
+            </select>
+            <div className="adm-fl-range">
+              <input type="number" value={oMin} onChange={(e) => setOMin(e.target.value)} placeholder="€ от" />
+              <input type="number" value={oMax} onChange={(e) => setOMax(e.target.value)} placeholder="€ до" />
+            </div>
+            <span className="adm-fl-count">{shownOrders.length}</span>
+            {(oq || oStatus !== "all" || oDelivery !== "all" || oSort !== "new" || oMin || oMax) && (
+              <button
+                className="adm-fl-reset"
+                onClick={() => { setOq(""); setOStatus("all"); setODelivery("all"); setOSort("new"); setOMin(""); setOMax(""); }}
+              >
+                ✕ сбросить
+              </button>
+            )}
+          </div>
         <div className="adm-list">
-          {orders.length === 0 && <p className="adm-empty">Заказов пока нет.</p>}
-          {orders.map((o) => {
+          {shownOrders.length === 0 && <p className="adm-empty">Заказы не найдены.</p>}
+          {shownOrders.map((o) => {
             const ord = o as unknown as OrderView;
             const status = ord.status || "new";
             return (
@@ -606,6 +721,7 @@ export default function AdminApp() {
             );
           })}
         </div>
+        </>
       )}
 
       {edit && (

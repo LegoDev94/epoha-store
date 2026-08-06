@@ -44,6 +44,20 @@ const writeJson = async (file, data) =>
   fsp.writeFile(file, JSON.stringify(data, null, 1), "utf8");
 
 const loadProducts = () => readJson(STORE, []);
+
+/* У товаров, добавленных до появления фильтров, даты нет — проставляем
+   её один раз, сохраняя текущий порядок витрины (новые сверху). */
+async function backfillDates() {
+  const list = await loadProducts();
+  if (!list.length || list.every((p) => p.createdAt)) return;
+  const now = Date.now();
+  list.forEach((p, i) => {
+    if (!p.createdAt) p.createdAt = new Date(now - i * 60000).toISOString();
+  });
+  await saveProducts(list);
+  console.log("[vm] проставлены даты добавления товаров");
+}
+backfillDates();
 const saveProducts = (list) => writeJson(STORE, list);
 
 /* ── авторизация ── */
@@ -534,6 +548,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
   ).padStart(2, "0");
   const clean = {
     id: Number(p.id),
+    createdAt: p.createdAt || list[idx]?.createdAt || new Date().toISOString(),
     n: p.n || nextN,
     cat: p.cat || "seating",
     price: Number(p.price) || 0,

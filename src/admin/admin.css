@@ -446,3 +446,52 @@
 @media (max-width: 620px) {
   .adm-ord-who i { min-width: 0; display: block; }
 }
+
+/* ── Панель фильтров ── */
+.adm-filters {
+  width: min(1180px, 94vw);
+  margin: 20px auto 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.adm-filters input,
+.adm-filters select {
+  padding: 10px 13px;
+  border: 1px solid rgba(122, 97, 54, 0.3);
+  border-radius: 8px;
+  background: #fffdf6;
+  color: #26291f;
+  font-family: inherit;
+  font-size: 13.5px;
+  outline: none;
+}
+.adm-filters input:focus,
+.adm-filters select:focus { border-color: #a98a50; }
+.adm-fl-search { flex: 1; min-width: 220px; }
+.adm-fl-range { display: flex; gap: 6px; }
+.adm-fl-range input { width: 82px; }
+.adm-fl-count {
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff8e8;
+  background: var(--a-brass);
+  border-radius: 999px;
+  padding: 4px 11px;
+}
+.adm-fl-reset {
+  background: none;
+  border: 1px dashed rgba(122, 97, 54, 0.45);
+  border-radius: 999px;
+  padding: 8px 14px;
+  color: var(--a-brass-sh);
+  font-family: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.adm-fl-reset:hover { background: rgba(122, 97, 54, 0.12); }
+@media (max-width: 620px) {
+  .adm-fl-search { min-width: 100%; }
+  .adm-filters select { flex: 1; min-width: 140px; }
+}
