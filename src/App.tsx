@@ -477,6 +477,25 @@ function Header({
   );
 }
 
+/* ── Плавающая кнопка WhatsApp ── */
+function WhatsApp({ t }: { t: T }) {
+  return (
+    <a
+      className="wa"
+      href={`https://wa.me/37125674959?text=${encodeURIComponent(t("wa.hello"))}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={t("wa.label")}
+    >
+      <svg viewBox="0 0 24 24" width="26" height="26" fill="currentColor" aria-hidden="true">
+        <path d="M17.5 14.4c-.3-.2-1.7-.9-2-1-.3-.1-.5-.2-.7.1-.2.3-.7 1-.9 1.2-.2.2-.3.2-.6.1-.3-.2-1.2-.5-2.3-1.4-.9-.8-1.4-1.7-1.6-2-.2-.3 0-.5.1-.6l.5-.5c.2-.2.2-.3.3-.5.1-.2 0-.4 0-.5 0-.2-.7-1.6-.9-2.2-.2-.6-.5-.5-.7-.5h-.6c-.2 0-.5.1-.8.4-.3.3-1 1-1 2.5s1.1 2.9 1.2 3.1c.2.2 2.1 3.2 5.1 4.4.7.3 1.3.5 1.7.6.7.2 1.4.2 1.9.1.6-.1 1.7-.7 2-1.4.2-.7.2-1.3.2-1.4-.1-.2-.3-.3-.6-.4z" />
+        <path d="M12 2.1c-5.5 0-10 4.4-10 9.9 0 1.7.5 3.4 1.3 4.9L2 22l5.3-1.4c1.4.8 3 1.2 4.7 1.2 5.5 0 10-4.4 10-9.9s-4.5-9.8-10-9.8zm0 18c-1.5 0-3-.4-4.3-1.2l-.3-.2-3.1.8.8-3-.2-.3c-.9-1.4-1.3-3-1.3-4.6 0-4.5 3.7-8.2 8.4-8.2s8.4 3.7 8.4 8.2-3.7 8.5-8.4 8.5z" />
+      </svg>
+      <span>{t("wa.label")}</span>
+    </a>
+  );
+}
+
 function Footer({ t }: { t: T }) {
   return (
     <footer className="ftr">
@@ -1269,6 +1288,7 @@ export default function App() {
       {route.view === "checkout" && <CheckoutPage lots={lots} cart={cart} lang={lang} t={t} fmt={fmt} />}
       {route.view === "success" && <SuccessPage order={route.order} t={t} />}
       <Footer t={t} />
+      <WhatsApp t={t} />
     </>
   );
 }

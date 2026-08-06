@@ -133,6 +133,8 @@ const lv: Dict = {
   "ftr.contact": "Sazināties",
   "ftr.rights": "Demonstrācijas skatlogs",
   "ftr.by": "Dizains un izstrāde —",
+  "wa.label": "Rakstīt WhatsApp",
+  "wa.hello": "Sveiki! Interesē priekšmets no EPOHA skatloga",
 };
 
 const en: Dict = {
@@ -260,6 +262,8 @@ const en: Dict = {
   "ftr.contact": "Contact",
   "ftr.rights": "Demonstration showcase",
   "ftr.by": "Design and development —",
+  "wa.label": "Chat on WhatsApp",
+  "wa.hello": "Hello! I am interested in a piece from the EPOHA showcase",
 };
 
 const ru: Dict = {
@@ -387,6 +391,8 @@ const ru: Dict = {
   "ftr.contact": "Связаться",
   "ftr.rights": "Демонстрационная витрина",
   "ftr.by": "Дизайн и разработка —",
+  "wa.label": "Написать в WhatsApp",
+  "wa.hello": "Здравствуйте! Интересует предмет с витрины EPOHA",
 };
 
 const DICTS: Record<Lang, Dict> = { lv, en, ru };

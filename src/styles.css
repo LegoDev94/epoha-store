@@ -1247,6 +1247,7 @@ html::-webkit-scrollbar-thumb {
 @media (max-width: 760px) {
   .pd-gallery {
     display: flex;
+    flex-direction: row;
     gap: 0;
     overflow-x: auto;
     scroll-snap-type: x mandatory;
@@ -1289,4 +1290,61 @@ html::-webkit-scrollbar-thumb {
   }
   .pd-thumbs button.on { opacity: 1; border-color: var(--brass-sh); border-width: 2px; }
   .pd-thumbs img { width: 100%; height: 100%; object-fit: cover; display: block; }
+}
+
+
+/* ── Плавающая кнопка WhatsApp ─────────────────────────────────── */
+.wa {
+  position: fixed;
+  right: max(3vw, 18px);
+  bottom: max(3vh, 20px);
+  z-index: 95;
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  height: 56px;
+  padding: 0 16px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #2fbe5a, #21a04a 60%, #17853c);
+  color: #fff;
+  text-decoration: none;
+  font-family: var(--sans);
+  font-size: 14.5px;
+  font-weight: 700;
+  box-shadow: 0 14px 34px rgba(23, 133, 60, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.35);
+  transition: transform 240ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 240ms ease;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.wa svg { flex: 0 0 auto; }
+.wa span {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition: max-width 320ms cubic-bezier(0.16, 1, 0.3, 1), opacity 220ms ease, margin-left 320ms ease;
+}
+.wa:hover { transform: translateY(-3px); box-shadow: 0 20px 44px rgba(23, 133, 60, 0.45); }
+.wa:hover span { max-width: 220px; opacity: 1; margin-left: 10px; }
+/* Пульс-ореол, гаснет при наведении */
+.wa::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: 999px;
+  box-shadow: 0 0 0 0 rgba(47, 190, 90, 0.55);
+  animation: waPulse 2.8s ease-out infinite;
+  pointer-events: none;
+}
+.wa:hover::after { animation: none; }
+@keyframes waPulse {
+  0% { box-shadow: 0 0 0 0 rgba(47, 190, 90, 0.5); }
+  70% { box-shadow: 0 0 0 18px rgba(47, 190, 90, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(47, 190, 90, 0); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .wa::after { animation: none; }
+}
+@media (max-width: 760px) {
+  .wa { height: 52px; padding: 0 15px; right: 14px; bottom: 16px; }
+  .wa span { display: none; }
 }
