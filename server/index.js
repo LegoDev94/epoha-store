@@ -169,6 +169,56 @@ async function importFromUrl(url) {
   };
 }
 
+/* ── авто-перевод карточки (DeepSeek) ──
+   Ключ живёт только в окружении сервера: DEEPSEEK_API_KEY. */
+const LANG_NAME = { lv: "Latvian", en: "English", ru: "Russian" };
+
+async function translateCard(src, from) {
+  const key = process.env.DEEPSEEK_API_KEY;
+  if (!key) throw new Error("DEEPSEEK_API_KEY не задан на сервере");
+  const targets = ["lv", "en", "ru"].filter((l) => l !== from);
+  const prompt = [
+    `Translate a product card of a premium vintage furniture shop from ${LANG_NAME[from]}`,
+    `into ${targets.map((l) => LANG_NAME[l]).join(" and ")}.`,
+    "Keep the calm, expensive, editorial tone; keep proper names, styles (rococo, Gustavian, Biedermeier),",
+    "measurements and centuries as they are. Do not invent facts, do not add commentary.",
+    'Answer with strict JSON only: {"lv":{"title","era","desc"},"en":{"title","era","desc"},"ru":{"title","era","desc"}}.',
+    `The ${LANG_NAME[from]} version must be returned unchanged.`,
+    "",
+    JSON.stringify({ [from]: src }),
+  ].join("\n");
+
+  const res = await fetch("https://api.deepseek.com/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: "deepseek-chat",
+      messages: [
+        {
+          role: "system",
+          content: "You are a precise translator for an antique furniture catalogue. Reply with JSON only.",
+        },
+        { role: "user", content: prompt },
+      ],
+      response_format: { type: "json_object" },
+      temperature: 1.1,
+    }),
+  });
+  if (!res.ok) throw new Error(`DeepSeek ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const data = await res.json();
+  const raw = data?.choices?.[0]?.message?.content || "{}";
+  const parsed = JSON.parse(String(raw).replace(/^```(?:json)?|```$/g, "").trim());
+  const norm = (o = {}) => ({
+    title: String(o.title || "").trim(),
+    era: String(o.era || "").trim(),
+    desc: String(o.desc || "").trim(),
+  });
+  return { lv: norm(parsed.lv), en: norm(parsed.en), ru: norm(parsed.ru) };
+}
+
+/** Язык-источник: тот, где заполнено название (приоритет lv → en → ru). */
+const pickSource = (tr) => ["lv", "en", "ru"].find((l) => (tr?.[l]?.title || "").trim());
+
 /* ── сервер ── */
 const app = express();
 app.disable("x-powered-by");
@@ -211,9 +261,32 @@ app.post("/api/admin/upload", auth, upload.array("files", 8), (req, res) => {
   res.json({ images: (req.files || []).map((f) => `/uploads/${f.filename}`) });
 });
 
+app.post("/api/admin/translate", auth, async (req, res) => {
+  try {
+    const tr = req.body?.tr || {};
+    const from = req.body?.from || pickSource(tr);
+    if (!from) return res.status(400).json({ error: "Заполните карточку хотя бы на одном языке" });
+    res.json(await translateCard(tr[from], from));
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
 app.post("/api/admin/products", auth, async (req, res) => {
   const p = req.body || {};
   if (!p.id) p.id = Date.now();
+
+  /* Публикуем сразу на трёх языках: пустые версии переводим сами. */
+  const from = pickSource(p.tr);
+  const missing = ["lv", "en", "ru"].filter((l) => !(p.tr?.[l]?.title || "").trim());
+  if (from && missing.length && process.env.DEEPSEEK_API_KEY) {
+    try {
+      const done = await translateCard(p.tr[from], from);
+      for (const l of missing) p.tr[l] = { ...done[l] };
+    } catch (e) {
+      console.warn("[epoha] авто-перевод не удался:", String(e.message || e));
+    }
+  }
   const list = await loadProducts();
   const idx = list.findIndex((x) => x.id === p.id);
   const nextN = String(

@@ -116,7 +116,7 @@ function Editor({
 }) {
   const [p, setP] = useState<Lot>(structuredClone(item));
   const [tab, setTab] = useState<Lang>("lv");
-  const [busy, setBusy] = useState(false);
+  const [busy, setBusy] = useState<false | "save" | "tr" | "up">(false);
   const [imgUrl, setImgUrl] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
@@ -126,9 +126,26 @@ function Editor({
   const copyFrom = (from: Lang) =>
     setP((s) => ({ ...s, tr: { ...s.tr, [tab]: { ...s.tr[from] } } }));
 
+  /* Авто-перевод активной вкладки на два других языка */
+  const translate = async () => {
+    if (!p.tr[tab].title.trim()) return alert(`Заполните карточку на ${tab.toUpperCase()} — с неё и переведём`);
+    setBusy("tr");
+    try {
+      const done = await api("api/admin/translate", {
+        method: "POST",
+        body: JSON.stringify({ tr: p.tr, from: tab }),
+      });
+      setP((s) => ({ ...s, tr: { ...s.tr, ...done, [tab]: s.tr[tab] } }));
+    } catch (e) {
+      alert(String((e as Error).message));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const upload = async (files: FileList | null) => {
     if (!files?.length) return;
-    setBusy(true);
+    setBusy("up");
     try {
       const fd = new FormData();
       [...files].forEach((f) => fd.append("files", f));
@@ -142,8 +159,9 @@ function Editor({
   };
 
   const save = async () => {
-    if (!p.tr.lv.title.trim()) return alert("Заполните латышское название — это язык витрины по умолчанию");
-    setBusy(true);
+    if (!p.tr.lv.title.trim() && !p.tr.en.title.trim() && !p.tr.ru.title.trim())
+      return alert("Заполните карточку хотя бы на одном языке");
+    setBusy("save");
     try {
       const saved = await api("api/admin/products", { method: "POST", body: JSON.stringify(p) });
       onSave(saved);
@@ -204,7 +222,7 @@ function Editor({
               </div>
             ))}
             <div className="adm-img adm-img-add">
-              <button onClick={() => fileRef.current?.click()}>+ файл</button>
+              <button onClick={() => fileRef.current?.click()}>{busy === "up" ? "…" : "+ файл"}</button>
               <input
                 ref={fileRef}
                 type="file"
@@ -242,6 +260,9 @@ function Editor({
               </button>
             ))}
             <div className="adm-copy">
+              <button className="adm-tr" onClick={translate} disabled={!!busy}>
+                {busy === "tr" ? "Перевод…" : `✦ Перевести с ${tab.toUpperCase()} на остальные`}
+              </button>
               {LANGS.filter((l) => l.v !== tab).map((l) => (
                 <button key={l.v} onClick={() => copyFrom(l.v)}>
                   ← копировать {l.v.toUpperCase()}
@@ -278,11 +299,14 @@ function Editor({
         </div>
 
         <footer className="adm-modal-foot">
+          <span className="adm-foot-hint">
+            Пустые языки заполнятся автоматически при сохранении
+          </span>
           <button className="adm-btn adm-ghost" onClick={onClose}>
             Отмена
           </button>
-          <button className="adm-btn" onClick={save} disabled={busy}>
-            {busy ? "Сохранение…" : "Сохранить"}
+          <button className="adm-btn" onClick={save} disabled={!!busy}>
+            {busy === "save" ? "Сохранение…" : "Сохранить"}
           </button>
         </footer>
       </div>

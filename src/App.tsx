@@ -667,6 +667,121 @@ function Home({
   );
 }
 
+/* ── полноэкранный просмотр фото: свайп между кадрами, тап — зум,
+      в увеличенном виде кадр таскается пальцем ── */
+function Lightbox({
+  images,
+  start,
+  title,
+  t,
+  onClose,
+}: {
+  images: string[];
+  start: number;
+  title: string;
+  t: T;
+  onClose: () => void;
+}) {
+  const [i, setI] = useState(start);
+  const [zoom, setZoom] = useState(false);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const touch = useRef<{ x: number; y: number } | null>(null);
+
+  const at = (n: number) => {
+    setZoom(false);
+    setI((n + images.length) % images.length);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+      if (e.key === "ArrowRight") at(i + 1);
+      if (e.key === "ArrowLeft") at(i - 1);
+    };
+    addEventListener("keydown", onKey);
+    document.body.style.overflow = "hidden";
+    return () => {
+      removeEventListener("keydown", onKey);
+      document.body.style.overflow = "";
+    };
+  }, [i, images.length]);
+
+  /* Тап по увеличенному кадру центрирует зум в точке касания */
+  const toggleZoom = (e: React.MouseEvent<HTMLImageElement>) => {
+    const box = scrollRef.current;
+    const next = !zoom;
+    setZoom(next);
+    if (next && box) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const rx = (e.clientX - rect.left) / rect.width;
+      const ry = (e.clientY - rect.top) / rect.height;
+      requestAnimationFrame(() => {
+        box.scrollLeft = rx * (box.scrollWidth - box.clientWidth);
+        box.scrollTop = ry * (box.scrollHeight - box.clientHeight);
+      });
+    }
+  };
+
+  return (
+    <div className="lb" role="dialog" aria-label={title}>
+      <div className="lb-bar">
+        <span className="lb-count">
+          {i + 1} / {images.length}
+        </span>
+        <button className="lb-x" onClick={onClose} aria-label={t("nav.close")}>
+          ✕
+        </button>
+      </div>
+
+      <div
+        className={`lb-scroll${zoom ? " zoom" : ""}`}
+        ref={scrollRef}
+        onClick={(e) => {
+          if (e.target === e.currentTarget && !zoom) onClose();
+        }}
+        onTouchStart={(e) => {
+          if (zoom) return;
+          touch.current = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        }}
+        onTouchEnd={(e) => {
+          if (zoom || !touch.current) return;
+          const dx = e.changedTouches[0].clientX - touch.current.x;
+          const dy = e.changedTouches[0].clientY - touch.current.y;
+          touch.current = null;
+          if (Math.abs(dx) > 55 && Math.abs(dx) > Math.abs(dy)) at(i + (dx < 0 ? 1 : -1));
+          else if (dy > 90) onClose();
+        }}
+      >
+        <img
+          className="lb-img"
+          src={images[i]}
+          alt={`${title} ${i + 1}`}
+          onClick={toggleZoom}
+          draggable={false}
+        />
+      </div>
+
+      {images.length > 1 && (
+        <>
+          <button className="lb-arrow lb-prev" onClick={() => at(i - 1)} aria-label="‹">
+            ‹
+          </button>
+          <button className="lb-arrow lb-next" onClick={() => at(i + 1)} aria-label="›">
+            ›
+          </button>
+          <div className="lb-thumbs">
+            {images.map((im, k) => (
+              <button key={im + k} className={k === i ? "on" : ""} onClick={() => at(k)}>
+                <img src={im} alt="" loading="lazy" />
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 /* ── страница товара ── */
 function LotPage({
   lot,
@@ -688,6 +803,7 @@ function LotPage({
   const tr = lot.tr[lang] ?? lot.tr.lv;
   const related = lots.filter((l) => l.cat === lot.cat && l.id !== lot.id).slice(0, 3);
   const inCart = cart.has(lot.id);
+  const [zoomAt, setZoomAt] = useState<number | null>(null);
   return (
     <div className="pg">
       <div className="wrap">
@@ -701,7 +817,7 @@ function LotPage({
         <div className="pd">
           <div className="pd-gallery">
             {lot.images.map((im, i) => (
-              <figure className="pd-photo" key={im + i}>
+              <figure className="pd-photo" key={im + i} onClick={() => setZoomAt(i)}>
                 <img
                   src={im}
                   alt={`${tr.title} ${i + 1}`}
@@ -710,9 +826,25 @@ function LotPage({
                   fetchPriority={i === 0 ? "high" : undefined}
                   loading={i === 0 ? undefined : "lazy"}
                 />
+                <figcaption className="pd-zoomhint" aria-hidden="true">
+                  <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8">
+                    <circle cx="11" cy="11" r="6.5" />
+                    <path d="M16 16 21 21 M11 8.5 v5 M8.5 11 h5" strokeLinecap="round" />
+                  </svg>
+                  {i + 1}/{lot.images.length}
+                </figcaption>
               </figure>
             ))}
           </div>
+          {zoomAt !== null && (
+            <Lightbox
+              images={lot.images}
+              start={zoomAt}
+              title={tr.title}
+              t={t}
+              onClose={() => setZoomAt(null)}
+            />
+          )}
           <aside className="pd-panel">
             <span className="pd-n">№ {lot.n} · {t("cat." + lot.cat).toUpperCase()}</span>
             <h1 className="pd-title">{tr.title}</h1>
