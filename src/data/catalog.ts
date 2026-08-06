@@ -1,6 +1,6 @@
 import SEED from "../../data/products.json";
 
-export type Category = "seating" | "mirror" | "light" | "storage" | "table";
+export type Category = "seating" | "mirror" | "light" | "storage" | "table" | "decor";
 export type Lang = "lv" | "en" | "ru";
 
 export interface Tr {
@@ -30,6 +30,7 @@ export const CATEGORY_KEYS: (Category | "all")[] = [
   "light",
   "storage",
   "table",
+  "decor",
 ];
 
 /** Путь к изображению: абсолютные и серверные — как есть. */

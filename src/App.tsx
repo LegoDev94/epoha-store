@@ -146,6 +146,14 @@ function CatIcon({ c }: { c: Category | "all" }) {
           <path d="M3 8 h18 M5 8 c0 4-.5 9-1.5 12 M19 8 c0 4 .5 9 1.5 12 M8 8 c0 3-.3 7-1 10 M16 8 c0 3 .3 7 1 10" />
         </svg>
       );
+    case "decor":
+      return (
+        <svg viewBox="0 0 24 24" {...s}>
+          <path d="M4 10 h16 a8 8 0 0 1 -8 8 a8 8 0 0 1 -8 -8 Z" />
+          <path d="M8 10 c0-3 1.5-5 4-6 c2.5 1 4 3 4 6" />
+          <path d="M6.5 21 h11" />
+        </svg>
+      );
     default:
       return (
         <svg viewBox="0 0 24 24" {...s}>

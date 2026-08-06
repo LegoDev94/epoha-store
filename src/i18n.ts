@@ -26,6 +26,7 @@ const lv: Dict = {
   "cat.light": "Apgaismojums",
   "cat.storage": "Kumodes un glabāšana",
   "cat.table": "Galdi",
+  "cat.decor": "Dekors un keramika",
 
   "hero.kicker": "Nedēļas skatlogs · kolekcija papildināta",
   "hero.title": "Mēbeles,",
@@ -155,6 +156,7 @@ const en: Dict = {
   "cat.light": "Lighting",
   "cat.storage": "Chests & storage",
   "cat.table": "Tables",
+  "cat.decor": "Decor & ceramics",
 
   "hero.kicker": "Showcase of the week · collection updated",
   "hero.title": "Furniture that",
@@ -284,6 +286,7 @@ const ru: Dict = {
   "cat.light": "Свет",
   "cat.storage": "Комоды и хранение",
   "cat.table": "Столы",
+  "cat.decor": "Декор и керамика",
 
   "hero.kicker": "Витрина недели · коллекция пополнена",
   "hero.title": "Мебель,",

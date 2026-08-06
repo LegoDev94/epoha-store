@@ -68,6 +68,7 @@ const CAT_RULES = [
   ["mirror", /\b(mirror|spegel|spogul|зеркал)/gi],
   ["light", /\b(chandelier|candelabra|candlestick|candle holder|pendant|lamp|lampa|lampett|sconce|ljuskrona|ljusstake|lustra|sveč|люстр|светильник|подсвечник|канделябр|бра)/gi],
   ["storage", /\b(chest of drawers|chest|commode|kommod|cabinet|cupboard|sideboard|drawer|byr\u00e5|dresser|bookcase|skapis|kumode|комод|шкаф|буфет)/gi],
+  ["decor", /(bowl|vase|jar|plate|dish|tray|figurine|sculpture|statuette|porcelain|faience|ceramic|glass|crystal bowl|clock|painting|picture frame|skulptūra|vāze|šķīvis|keramika|porcelāns|ваза|чаша|блюдо|статуэтк|скульптур|фарфор|керамик|поднос|часы)/gi],
   ["table", /\b(table|bord|galds|desk|console|секретер|стол|столик)/gi],
 ];
 /* Категорию выбираем по числу совпадений: заголовок весит втрое. */
@@ -155,17 +156,33 @@ async function importFromUrl(url) {
       ).replace(/\s/g, "")
     ) || null;
 
+  /* Аукционные заголовки часто содержат всё описание — оставляем в
+     названии первые фразы, остальное уводим в описание. */
+  let shortTitle = title;
+  let fullDesc = desc;
+  if (title.length > 74) {
+    const parts = title.match(/[^.!?]+[.!?]*/g) || [title];
+    let head = "";
+    let rest = "";
+    for (const part of parts) {
+      if (head.length < 40 || head.length + part.length <= 74) head += part;
+      else rest += part;
+    }
+    shortTitle = head.trim();
+    fullDesc = [rest.trim(), desc].filter(Boolean).join(" ");
+  }
+
   return {
     id: srcId || Date.now(),
     source: finalUrl,
     images,
-    cat: guessCat(title, desc),
+    cat: guessCat(shortTitle, fullDesc),
     priceHint,
     /* Исходник аукциона — английский; латышская и русская версии
        допереводятся автоматически при сохранении карточки. */
     tr: {
       lv: { title: "", era: "", desc: "" },
-      en: { title, era: "", desc },
+      en: { title: shortTitle, era: "", desc: fullDesc },
       ru: { title: "", era: "", desc: "" },
     },
   };

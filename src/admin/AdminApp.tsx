@@ -12,6 +12,7 @@ const CATS: { v: Category; l: string }[] = [
   { v: "light", l: "Свет" },
   { v: "storage", l: "Комоды и хранение" },
   { v: "table", l: "Столы" },
+  { v: "decor", l: "Декор и керамика" },
 ];
 const LANGS: { v: Lang; l: string }[] = [
   { v: "lv", l: "Latviski" },
