@@ -1,7 +1,6 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
   CATEGORY_KEYS,
-  COLLECTIONS,
   SEED_LOTS,
   type Category,
   type Lang,
@@ -519,7 +518,6 @@ function Home({
   favs,
   cart,
   cat,
-  setCat,
   query,
   sort,
   setSort,
@@ -532,7 +530,6 @@ function Home({
   favs: Store;
   cart: Store;
   cat: Category | "all";
-  setCat: (c: Category | "all") => void;
   query: string;
   sort: string;
   setSort: (s: string) => void;
@@ -541,10 +538,8 @@ function Home({
   t: T;
   fmt: (n: number) => string;
 }) {
-  const [coll, setColl] = useState<string | null>(null);
-  const active = COLLECTIONS.find((c) => c.key === coll) ?? null;
   const [slide, setSlide] = useState(0);
-  useReveal(coll);
+  useReveal(cat + sort);
 
   const featured = useMemo(() => lots.filter((l) => !l.sold).slice(0, 3), [lots]);
   useEffect(() => {
@@ -555,8 +550,7 @@ function Home({
 
   const shown = useMemo(() => {
     let list = lots.slice();
-    if (active) list = list.filter((l) => active.ids.includes(l.id));
-    else if (cat !== "all") list = list.filter((l) => l.cat === cat);
+    if (cat !== "all") list = list.filter((l) => l.cat === cat);
     const q = query.trim().toLowerCase();
     if (q.length >= 2)
       list = list.filter((l) => {
@@ -566,15 +560,12 @@ function Home({
     if (sort === "cheap") list.sort((a, b) => a.price - b.price);
     if (sort === "rich") list.sort((a, b) => b.price - a.price);
     return list;
-  }, [lots, cat, query, sort, active, lang]);
+  }, [lots, cat, query, sort, lang]);
 
   const recent = viewed
     .map((id) => lots.find((l) => l.id === id))
     .filter(Boolean)
     .slice(0, 4) as Lot[];
-
-  const cur = featured[slide];
-  const curTr = cur ? cur.tr[lang] ?? cur.tr.lv : null;
 
   return (
     <>
@@ -604,12 +595,7 @@ function Home({
             >
               {t("hero.cta")}
             </button>
-            <button
-              className="btn-ghost bn-cta2"
-              onClick={() => document.getElementById("collections")?.scrollIntoView({ behavior: "smooth" })}
-            >
-              {t("hero.cta2")}
-            </button>
+
           </div>
           <div className="bn-facts">
             <span><b>{lots.length}</b> {t("hero.factItems")}</span>
@@ -619,76 +605,13 @@ function Home({
             <span><b>7–14</b> {t("hero.factShip")}</span>
           </div>
         </div>
-
-        {cur && curTr && (
-          <button className="bn-card on" onClick={() => go(`/lot/${cur.id}`)}>
-            <span className="bn-card-k">{t("hero.now")}</span>
-            <b>{curTr.title}</b>
-            <span className="bn-card-era">{curTr.era}</span>
-            <span className="bn-card-row">
-              <u>€{fmt(cur.price)}</u>
-              <s
-                onClick={(e) => {
-                  e.stopPropagation();
-                  cart.has(cur.id) ? go("/cart") : cart.add(cur.id);
-                }}
-              >
-                {cart.has(cur.id) ? t("lot.inCart") : t("lot.add")}
-              </s>
-            </span>
-          </button>
-        )}
-        {featured.length > 1 && (
-          <div className="bn-dots">
-            {featured.map((f, i) => (
-              <button
-                key={f.id}
-                className={i === slide ? "on" : ""}
-                aria-label={(f.tr[lang] ?? f.tr.lv).title}
-                onClick={() => setSlide(i)}
-              />
-            ))}
-          </div>
-        )}
       </section>
 
-      <section className="sec" id="collections">
-        <div className="wrap">
-          <SecHead kicker={t("coll.kicker")} title={t("coll.title")} accent={t("coll.titleAccent")} />
-          <div className="colls">
-            {COLLECTIONS.map((c) => {
-              const cover = lots.find((l) => l.id === c.cover) ?? lots[0];
-              return (
-                <button
-                  key={c.key}
-                  className={`coll reveal${coll === c.key ? " on" : ""}`}
-                  onClick={() => {
-                    setColl(coll === c.key ? null : c.key);
-                    setCat("all");
-                    document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" });
-                  }}
-                >
-                  {cover && <img src={cover.images[0]} alt="" loading="lazy" />}
-                  <span className="coll-shade" />
-                  <span className="coll-text">
-                    <b>{t("coll." + c.key)}</b>
-                    <i>{t("coll." + c.key + "Hint")}</i>
-                    <u>
-                      {c.ids.length} {t("coll.count")}
-                    </u>
-                  </span>
-                </button>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      <section className="sec" id="catalog" style={{ paddingTop: 20 }}>
+      <section className="sec" id="catalog" style={{ paddingTop: 40 }}>
         <div className="wrap">
           <SecHead
-            kicker={active ? t("cat.kickerColl") : t("cat.kicker")}
-            title={active ? t("coll." + active.key) : t("cat." + cat)}
+            kicker={t("cat.kicker")}
+            title={t("cat." + cat)}
             count={shown.length}
             right={
               <select className="sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
@@ -698,11 +621,7 @@ function Home({
               </select>
             }
           />
-          {active && (
-            <button className="coll-reset" onClick={() => setColl(null)}>
-              ✕ {t("coll.reset")} «{t("coll." + active.key)}»
-            </button>
-          )}
+
           {shown.length === 0 ? (
             <div className="empty">
               <p>{t("cat.empty")}</p>
@@ -1172,7 +1091,6 @@ export default function App() {
           favs={favs}
           cart={cart}
           cat={cat}
-          setCat={setCat}
           query={query}
           sort={sort}
           setSort={setSort}
