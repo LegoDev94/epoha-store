@@ -382,6 +382,7 @@ app.post("/api/orders", async (req, res) => {
         n: p.n,
         price: Number(p.price) || 0,
         title: p.tr?.lv?.title || p.tr?.en?.title || `#${p.id}`,
+        img: p.images?.[0] || "",
       }));
     if (!items.length) return res.status(400).json({ error: "Grozs ir tukss" });
     if (!String(b.name || "").trim() || !String(b.contact || "").trim())
@@ -461,6 +462,12 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
+});
+
+app.delete("/api/admin/orders/:num", auth, async (req, res) => {
+  const list = await readJson(ORDERS, []);
+  await writeJson(ORDERS, list.filter((o) => o.order !== req.params.num));
+  res.json({ ok: true });
 });
 
 /* Ручная отметка статуса заказа из админки */

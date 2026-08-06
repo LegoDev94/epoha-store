@@ -368,3 +368,81 @@
   font-size: 13px;
   line-height: 1.5;
 }
+
+/* ── Заказ в админке ── */
+.adm-ord {
+  background: var(--a-card);
+  border: 1px solid var(--a-line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.adm-ord-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.adm-ord-top b { font-family: "Prata", Georgia, serif; font-weight: 400; font-size: 19px; }
+.adm-ord-top time { color: var(--a-dim); font-size: 12.5px; }
+.adm-ord-top u {
+  margin-left: auto;
+  text-decoration: none;
+  font-family: "Prata", Georgia, serif;
+  font-size: 21px;
+  color: var(--a-brass-sh);
+}
+.adm-badge {
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: rgba(122, 97, 54, 0.14);
+  color: #5f4c26;
+}
+.adm-st-paid { background: rgba(47, 158, 90, 0.16); color: #1f7a45; }
+.adm-st-done { background: rgba(60, 90, 160, 0.14); color: #2f4c86; }
+.adm-st-cancelled { background: rgba(176, 83, 47, 0.14); color: #a0421f; }
+.adm-ord-who { display: flex; flex-direction: column; gap: 5px; font-size: 13.5px; }
+.adm-ord-who i {
+  display: inline-block;
+  min-width: 104px;
+  font-style: normal;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--a-brass-sh);
+}
+.adm-ord-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px dashed var(--a-line);
+  border-bottom: 1px dashed var(--a-line);
+}
+.adm-ord-item { display: flex; align-items: center; gap: 12px; }
+.adm-ord-item img,
+.adm-ord-noimg {
+  width: 56px;
+  height: 42px;
+  object-fit: cover;
+  border-radius: 5px;
+  background: #e8e0cc;
+  flex: 0 0 auto;
+}
+.adm-ord-item > span { display: flex; flex-direction: column; min-width: 0; }
+.adm-ord-item b { font-size: 14px; font-weight: 600; }
+.adm-ord-item i { font-style: normal; font-size: 11.5px; color: var(--a-dim); }
+.adm-ord-item em {
+  margin-left: auto;
+  font-style: normal;
+  font-family: "Prata", Georgia, serif;
+  font-size: 16px;
+  color: var(--a-brass-sh);
+}
+.adm-ord-ship b { color: var(--a-dim); font-weight: 500; }
+.adm-ord-foot { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 620px) {
+  .adm-ord-who i { min-width: 0; display: block; }
+}

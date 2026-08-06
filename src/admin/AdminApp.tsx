@@ -20,6 +20,35 @@ const LANGS: { v: Lang; l: string }[] = [
   { v: "ru", l: "Русский" },
 ];
 
+const STATUS: Record<string, string> = {
+  new: "новый",
+  paid: "оплачен",
+  done: "выполнен",
+  cancelled: "отменён",
+};
+
+interface OrderItem {
+  id: number;
+  n?: string;
+  title?: string;
+  price?: number;
+  img?: string;
+}
+interface OrderView {
+  order: string;
+  at: string;
+  status?: string;
+  total?: number;
+  deliveryFee?: number;
+  delivery?: string;
+  address?: string;
+  name?: string;
+  contact?: string;
+  email?: string;
+  comment?: string;
+  items?: OrderItem[];
+}
+
 const empty = (): Lot => ({
   id: 0,
   n: "",
@@ -386,6 +415,17 @@ export default function AdminApp() {
     }
   };
 
+  const setStatus = async (num: string, status: string) => {
+    await api(`api/admin/orders/${num}`, { method: "POST", body: JSON.stringify({ status }) });
+    api("api/admin/orders").then(setOrders).catch(() => {});
+  };
+
+  const removeOrder = async (num: string) => {
+    if (!confirm(`Удалить заказ ${num}?`)) return;
+    await api(`api/admin/orders/${num}`, { method: "DELETE" });
+    api("api/admin/orders").then(setOrders).catch(() => {});
+  };
+
   const remove = async (l: Lot) => {
     if (!confirm(`Удалить «${l.tr.lv.title || l.tr.en.title}»?`)) return;
     await api(`api/admin/products/${l.id}`, { method: "DELETE" });
@@ -489,21 +529,82 @@ export default function AdminApp() {
       {tab === "orders" && (
         <div className="adm-list">
           {orders.length === 0 && <p className="adm-empty">Заказов пока нет.</p>}
-          {orders.map((o, i) => (
-            <article className="adm-card adm-order" key={i}>
-              <div className="adm-card-main">
-                <b>{String(o.order)}</b>
-                <span>
-                  {String(o.name || "")} · {String(o.contact || "")} · {String(o.city || "")}
-                </span>
-                <span>{String(o.comment || "")}</span>
-              </div>
-              <div className="adm-card-right">
-                <b>€{String(o.total)}</b>
-                <span>{new Date(String(o.at)).toLocaleString("ru-RU")}</span>
-              </div>
-            </article>
-          ))}
+          {orders.map((o) => {
+            const ord = o as unknown as OrderView;
+            const status = ord.status || "new";
+            return (
+              <article className="adm-ord" key={ord.order}>
+                <header className="adm-ord-top">
+                  <b>{ord.order}</b>
+                  <span className={`adm-badge adm-st-${status}`}>{STATUS[status] || status}</span>
+                  <time>{new Date(ord.at).toLocaleString("ru-RU")}</time>
+                  <u>€{ord.total ?? "—"}</u>
+                </header>
+
+                <div className="adm-ord-who">
+                  <span>
+                    <i>Покупатель</i>
+                    {ord.name} · {ord.contact}
+                    {ord.email ? ` · ${ord.email}` : ""}
+                  </span>
+                  <span>
+                    <i>Получение</i>
+                    {ord.delivery === "courier"
+                      ? `Доставка до дверей (+€${ord.deliveryFee ?? 50}) — ${ord.address || "адрес не указан"}`
+                      : ord.delivery === "pickup"
+                        ? "Самовывоз со склада в Талси (бесплатно)"
+                        : "—"}
+                  </span>
+                  {ord.comment && (
+                    <span>
+                      <i>Комментарий</i>
+                      {ord.comment}
+                    </span>
+                  )}
+                </div>
+
+                <div className="adm-ord-items">
+                  {(ord.items || []).map((it, k) => {
+                    const prod = items.find((x) => x.id === it.id);
+                    const img = it.img || prod?.images?.[0] || "";
+                    return (
+                      <div className="adm-ord-item" key={String(it.id) + k}>
+                        {img ? <img src={img} alt="" /> : <span className="adm-ord-noimg" />}
+                        <span>
+                          <b>{it.title || prod?.tr.lv.title || `#${it.id}`}</b>
+                          <i>№ {it.n ?? prod?.n ?? "—"}</i>
+                        </span>
+                        <em>€{it.price ?? prod?.price ?? 0}</em>
+                      </div>
+                    );
+                  })}
+                  {ord.deliveryFee ? (
+                    <div className="adm-ord-item adm-ord-ship">
+                      <span>
+                        <b>Доставка</b>
+                      </span>
+                      <em>€{ord.deliveryFee}</em>
+                    </div>
+                  ) : null}
+                </div>
+
+                <footer className="adm-ord-foot">
+                  {(["paid", "done", "cancelled"] as const).map((st) => (
+                    <button
+                      key={st}
+                      className={`adm-btn adm-btn-sm${status === st ? "" : " adm-ghost"}`}
+                      onClick={() => setStatus(ord.order, st)}
+                    >
+                      {STATUS[st]}
+                    </button>
+                  ))}
+                  <button className="adm-btn adm-btn-sm adm-danger" onClick={() => removeOrder(ord.order)}>
+                    Удалить
+                  </button>
+                </footer>
+              </article>
+            );
+          })}
         </div>
       )}
 
