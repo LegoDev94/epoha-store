@@ -95,8 +95,16 @@ function useReveal(dep: unknown) {
       (es) => es.forEach((e) => e.isIntersecting && e.target.classList.add("in")),
       { threshold: 0.1 }
     );
-    document.querySelectorAll(".reveal").forEach((el) => io.observe(el));
-    return () => io.disconnect();
+    const attach = () =>
+      document.querySelectorAll(".reveal:not(.in)").forEach((el) => io.observe(el));
+    attach();
+    /* товары приезжают из API после первого кадра — подписываемся ещё раз,
+       иначе новые карточки остаются прозрачными */
+    const again = setTimeout(attach, 300);
+    return () => {
+      clearTimeout(again);
+      io.disconnect();
+    };
   }, [dep]);
 }
 
@@ -565,7 +573,7 @@ function Home({
   t: T;
   fmt: (n: number) => string;
 }) {
-  useReveal(cat + sort);
+  useReveal(`${cat}${sort}${lots.length}`);
 
   const shown = useMemo(() => {
     let list = lots.slice();
@@ -1267,7 +1275,7 @@ export default function App() {
     };
   }, []);
 
-  useReveal(route.view + cat + query + sort + lang);
+  useReveal(`${route.view}${cat}${query}${sort}${lang}${lots.length}`);
 
   const key = route.view + ("id" in route ? route.id : "") + ("order" in route ? route.order : "");
   const prevKey = useRef(key);
