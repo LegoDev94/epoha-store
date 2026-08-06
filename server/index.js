@@ -64,13 +64,34 @@ const meta = (html, attr, name) => {
 };
 
 const CAT_RULES = [
-  [/(sofa|soffa|settee|couch|armchair|chair|stol|bergere|bergère|fåtölj|bench|stool|seating|divān|krēsl)/i, "seating"],
-  [/(mirror|spegel|spogul|зеркал)/i, "mirror"],
-  [/(chandelier|lamp|lampa|light|ljus|sconce|lustr|люстр)/i, "light"],
-  [/(chest|commode|kommod|cabinet|drawer|byrå|dresser|skāp|kumod|комод|шкаф)/i, "storage"],
-  [/(table|bord|galds|desk|стол)/i, "table"],
+  ["seating", /(sofa|soffa|settee|couch|armchair|arm chair|chair|fauteuil|bergere|bergère|fåtölj|stol|bench|stool|ottoman|divān|krēsl|диван|кресл|стул|банкетк)/gi],
+  ["mirror", /(mirror|spegel|spogul|зеркал)/gi],
+  ["light", /(chandelier|pendant|lamp|lampa|lampett|sconce|light fitting|ljuskrona|lustra|люстр|светильник|бра)/gi],
+  ["storage", /(chest of drawers|chest|commode|kommod|cabinet|cupboard|sideboard|drawer|byrå|dresser|bookcase|skapis|kumode|комод|шкаф|буфет)/gi],
+  ["table", /(table|bord|galds|desk|console|секретер|стол|столик)/gi],
 ];
-const guessCat = (text) => CAT_RULES.find(([re]) => re.test(text))?.[1] || "seating";
+/* Категорию выбираем по числу совпадений: заголовок весит втрое. */
+const guessCat = (title, desc = "") => {
+  let best = "seating";
+  let top = 0;
+  let bestAt = Infinity;
+  for (const [cat, re] of CAT_RULES) {
+    re.lastIndex = 0;
+    const hits =
+      (String(title).match(re) || []).length * 3 + (String(desc).match(re) || []).length;
+    if (!hits) continue;
+    re.lastIndex = 0;
+    const at = re.exec(String(title))?.index ?? Infinity;
+    /* При равном счёте побеждает слово, стоящее в названии раньше:
+       «DINING TABLE AND CHAIRS» — это стол, а не стулья. */
+    if (hits > top || (hits === top && at < bestAt)) {
+      top = hits;
+      bestAt = at;
+      best = cat;
+    }
+  }
+  return best;
+};
 
 async function downloadImage(url, base, i) {
   const res = await fetch(url, { headers: { "User-Agent": UA } });
@@ -138,7 +159,7 @@ async function importFromUrl(url) {
     id: srcId || Date.now(),
     source: finalUrl,
     images,
-    cat: guessCat(`${title} ${desc}`),
+    cat: guessCat(title, desc),
     priceHint,
     tr: {
       lv: { title, era: "", desc },
