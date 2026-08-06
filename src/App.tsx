@@ -804,6 +804,14 @@ function LotPage({
   const related = lots.filter((l) => l.cat === lot.cat && l.id !== lot.id).slice(0, 3);
   const inCart = cart.has(lot.id);
   const [zoomAt, setZoomAt] = useState<number | null>(null);
+  const [slide, setSlide] = useState(0);
+  const galleryRef = useRef<HTMLDivElement>(null);
+  const goSlide = (i: number) => {
+    const el = galleryRef.current;
+    if (!el) return;
+    el.scrollTo({ left: i * el.clientWidth, behavior: "smooth" });
+    setSlide(i);
+  };
   return (
     <div className="pg">
       <div className="wrap">
@@ -815,7 +823,14 @@ function LotPage({
           <b>№ {lot.n}</b>
         </nav>
         <div className="pd">
-          <div className="pd-gallery">
+          <div
+            className="pd-gallery"
+            ref={galleryRef}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              if (el.clientWidth) setSlide(Math.round(el.scrollLeft / el.clientWidth));
+            }}
+          >
             {lot.images.map((im, i) => (
               <figure className="pd-photo" key={im + i} onClick={() => setZoomAt(i)}>
                 <img
@@ -836,6 +851,20 @@ function LotPage({
               </figure>
             ))}
           </div>
+          {lot.images.length > 1 && (
+            <div className="pd-thumbs">
+              {lot.images.map((im, i) => (
+                <button
+                  key={im + i}
+                  className={i === slide ? "on" : ""}
+                  onClick={() => goSlide(i)}
+                  aria-label={`${tr.title} ${i + 1}`}
+                >
+                  <img src={im} alt="" loading="lazy" />
+                </button>
+              ))}
+            </div>
+          )}
           {zoomAt !== null && (
             <Lightbox
               images={lot.images}
