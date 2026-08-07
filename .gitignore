@@ -6,3 +6,6 @@ data/orders.json
 data/uploads/
 *.local
 .DS_Store
+
+# артефакт сборки TypeScript
+*.tsbuildinfo
