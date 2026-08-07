@@ -10,6 +10,7 @@ type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
 interface Field { value?: string | number; set?: boolean; origin: "panel" | "env" | "default" }
 interface Health {
+  mode: "live" | "test";
   stripe: boolean; stripeWebhook: boolean; connectWebhook: boolean;
   telegram: boolean; email: boolean; translate: boolean;
 }
@@ -41,6 +42,29 @@ export default function Settings({ api }: { api: Api }) {
       setHealth(d.health);
       setDraft({});
       toast.ok(t("s.nastrojkiSohraneny"));
+    } catch (e) {
+      toast.err(t("ui.saveFail"), String((e as Error).message));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  /* Переключение режима — заметное действие: меняется, куда уходят деньги */
+  const switchMode = async (next: "live" | "test") => {
+    if (next === health?.mode) return;
+    if (next === "test" && !values?.stripeTestSecret?.set && !draft.stripeTestSecret)
+      return toast.err(t("s.snachalaKlyuch"));
+    if (!confirm(next === "test" ? t("s.podtverditPesochnicu") : t("s.podtverditBoevoj"))) return;
+    setBusy("mode");
+    try {
+      const d = await api("api/admin/settings", {
+        method: "POST",
+        body: JSON.stringify({ ...draft, stripeMode: next }),
+      });
+      setValues(d.values);
+      setHealth(d.health);
+      setDraft({});
+      toast.ok(next === "test" ? t("s.vklyuchenaPesochnica") : t("s.vklyuchenBoevoj"));
     } catch (e) {
       toast.err(t("ui.saveFail"), String((e as Error).message));
     } finally {
@@ -151,6 +175,24 @@ export default function Settings({ api }: { api: Api }) {
         </section>
 
         <section className="mp-card">
+          <h3>{t("s.rezhimStripe")}</h3>
+          <div className={`set-mode set-mode-${health?.mode || "live"}`}>
+            <div className="seg">
+              <button className={health?.mode !== "test" ? "on" : ""} onClick={() => switchMode("live")}>
+                {t("s.boevojRezhim")}
+              </button>
+              <button className={health?.mode === "test" ? "on" : ""} onClick={() => switchMode("test")}>
+                {t("s.pesochnica")}
+              </button>
+            </div>
+            <p className="adm-hint">
+              {health?.mode === "test" ? t("s.pesochnicaOpisanie") : t("s.boevojOpisanie")}
+            </p>
+          </div>
+          {secret("stripeTestSecret", t("s.testovyjKlyuch"), t("s.testovyjKlyuchGde"))}
+          {secret("stripeTestWebhook", t("s.testovyjVebhuk"), t("s.testovyjVebhukGde"))}
+          {secret("stripeTestConnectWebhook", t("s.testovyjVebhukConnect"), t("s.testovyjVebhukConnectGde"))}
+
           <h3>{t("s.usloviyaRaboty")}</h3>
           {num("commission", t("a.komissiyaPloschadki"), t("s.beretsyaSCeny"), "%")}
           {num("deliveryFee", t("s.dostavkaPoLatvii"), t("s.pokazyvaetsyaPokupatelyuPri"), "€")}

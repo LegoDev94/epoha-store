@@ -1097,3 +1097,15 @@
 @media (min-width: 761px) {
   .adm-import-fold > summary { display: none; }
 }
+
+/* ── Пометка песочницы в панели ── */
+.adm-sandbox {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.12em;
+  padding: 4px 10px; border-radius: 999px;
+  background: repeating-linear-gradient(135deg, #26291f, #26291f 8px, #3a3f2e 8px, #3a3f2e 16px);
+  color: #e2c78a;
+}
+.set-mode { margin-bottom: 12px; }
+.set-mode .seg { width: 100%; }
+.set-mode .seg button { flex: 1; padding: 11px 14px; font-size: 13.5px; }
+.set-mode-test .seg button.on { background: #8a6a12; }

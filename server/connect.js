@@ -9,10 +9,13 @@
  * Библиотека stripe не используется: только form-urlencoded поверх fetch.
  */
 import crypto from "node:crypto";
+import * as settings from "./settings.js";
 
 const API = "https://api.stripe.com/v1";
-const key = () => process.env.STRIPE_SECRET_KEY || "";
+/* Ключ зависит от режима: боевой лежит в окружении, тестовый — в настройках */
+const key = () => settings.stripeKey();
 export const hasStripe = () => Boolean(key());
+export const mode = () => settings.mode();
 
 /** Плоский объект → скобочная нотация Stripe: {a:{b:1}} → a[b]=1 */
 function encode(obj, prefix = "", form = new URLSearchParams()) {

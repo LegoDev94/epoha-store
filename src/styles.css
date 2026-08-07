@@ -1606,3 +1606,14 @@ html::-webkit-scrollbar-thumb {
 .lgl-body li { font-size: 14.5px; line-height: 1.7; color: var(--paper-dim); }
 .lgl-body b { color: var(--paper); }
 .lgl-back { display: inline-block; margin-top: 30px; font-size: 14px; color: var(--brass-sh); }
+
+/* ── Песочница: покупатель должен видеть, что деньги не настоящие ── */
+.sandbox-bar {
+  position: sticky; top: 0; z-index: 95;
+  display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap;
+  padding: 8px 16px;
+  background: repeating-linear-gradient(135deg, #2b2f22, #2b2f22 12px, #3a3f2e 12px, #3a3f2e 24px);
+  color: #f6f1e3;
+  font-family: var(--sans); font-size: 12.5px; line-height: 1.4; text-align: center;
+}
+.sandbox-bar b { letter-spacing: 0.16em; color: #e2c78a; }

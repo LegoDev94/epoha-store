@@ -192,7 +192,8 @@ const REQUIRED_COMPANY = ["name", "regNr", "address", "phone", "email", "contact
 
 const companyReady = (s) => REQUIRED_COMPANY.every((f) => String(s.company?.[f] || "").trim());
 const termsReady = (s) => Boolean(s.terms?.acceptedAt);
-const stripeReady = (s) => Boolean(s.stripe?.chargesEnabled && s.stripe?.detailsSubmitted);
+const stripeReady = (s) =>
+  Boolean(s.stripe?.chargesEnabled && s.stripe?.detailsSubmitted && (s.stripe?.mode || "live") === settings.mode());
 
 /** Шаг, на котором партнёр стоит сейчас. */
 function partnerStage(s) {
@@ -468,7 +469,7 @@ app.get("/api/legal/:id", (req, res) => {
   }
 });
 app.get("/api/platform", (_req, res) =>
-  res.json({ ...legal.PLATFORM, commission: COMMISSION(), holdDays: holdDays(), deliveryFee: DELIVERY_FEE() })
+  res.json({ ...legal.PLATFORM, commission: COMMISSION(), holdDays: holdDays(), deliveryFee: DELIVERY_FEE(), stripeMode: settings.mode() })
 );
 
 /* ── Заказ: сначала регистрируем, потом ведём на оплату ──
@@ -664,6 +665,8 @@ app.post("/api/orders", async (req, res) => {
       id,
       at: new Date().toISOString(),
       status: "new",
+      /* В песочнице деньги ненастоящие — помечаем, чтобы не путать в отчётах */
+      mode: settings.mode(),
       items,
       ...money,
       /* суммы в евро — для писем и панели */
@@ -900,12 +903,12 @@ async function handleEvent(event) {
   }
 }
 
-function webhookRoute(path_, secretEnv) {
+function webhookRoute(path_, which) {
   app.post(path_, express.raw({ type: "application/json" }), async (req, res) => {
     try {
-      const secret = process.env[secretEnv];
+      const secret = which === "connect" ? settings.connectWebhookSecret() : settings.webhookSecret();
       if (!secret) {
-        console.warn(`[sofa] ${secretEnv} не задан — вебхук отклонён`);
+        console.warn(`[sofa] секрет вебхука (${which}, режим ${settings.mode()}) не задан — отклонено`);
         return res.status(500).send("webhook secret missing");
       }
       const event = connect.verifySignature({
@@ -922,8 +925,8 @@ function webhookRoute(path_, secretEnv) {
     }
   });
 }
-webhookRoute("/api/stripe/webhook", "STRIPE_WEBHOOK_SECRET");
-webhookRoute("/api/stripe/webhook/connect", "STRIPE_CONNECT_WEBHOOK_SECRET");
+webhookRoute("/api/stripe/webhook", "platform");
+webhookRoute("/api/stripe/webhook/connect", "connect");
 
 /* ── кабинет партнёра ─────────────────────────────────────────────
    Партнёр проходит четыре шага: анкета → договор → Stripe → проверка. */
@@ -1104,7 +1107,7 @@ app.post("/api/partner/stripe/link", auth, sellerSelf, async (req, res) => {
       accountId = acct.id;
       await updateJson(SELLERS, [], (list) => {
         const s = list.find((x) => x.id === seller.id);
-        if (s) s.stripe = connect.accountState(acct);
+        if (s) s.stripe = { ...connect.accountState(acct), mode: settings.mode() };
       });
     }
     const link = await connect.accountLink(accountId, {
@@ -1226,11 +1229,40 @@ app.get("/api/admin/settings", auth, adminOnly, (_req, res) =>
 
 app.post("/api/admin/settings", auth, adminOnly, async (req, res) => {
   try {
-    const before = settings.forPanel();
-    const values = await settings.save(req.body || {});
-    logAction(req, "settings.save", "settings", Object.keys(req.body || {}).join(","), undefined);
+    let values = await settings.save(req.body || {});
     /* Секреты в журнал не попадают — только имена изменённых полей */
-    void before;
+    logAction(req, "settings.save", "settings", Object.keys(req.body || {}).join(","), undefined);
+
+    /* Включили песочницу — сами заводим в ней вебхуки, чтобы владельцу
+       не пришлось повторять руками то, что уже сделано для боевого режима. */
+    if (settings.isTest() && settings.get("stripeTestSecret")) {
+      const patch = {};
+      try {
+        if (!settings.get("stripeTestWebhook")) {
+          const w = await connect.createWebhookEndpoint({
+            url: `${BASE_URL}/api/stripe/webhook`,
+            events: connect.PLATFORM_EVENTS,
+            description: "sofa.lv sandbox (platforma)",
+          });
+          patch.stripeTestWebhook = w.secret;
+        }
+        if (!settings.get("stripeTestConnectWebhook")) {
+          const w = await connect.createWebhookEndpoint({
+            url: `${BASE_URL}/api/stripe/webhook/connect`,
+            events: connect.CONNECT_EVENTS,
+            connect: true,
+            description: "sofa.lv sandbox (partneru konti)",
+          });
+          patch.stripeTestConnectWebhook = w.secret;
+        }
+        if (Object.keys(patch).length) {
+          values = await settings.save(patch);
+          console.log("[sofa] вебхуки песочницы созданы:", Object.keys(patch).join(", "));
+        }
+      } catch (e) {
+        console.warn("[sofa] вебхуки песочницы:", String(e.message || e));
+      }
+    }
     res.json({ values, health: settings.health() });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });

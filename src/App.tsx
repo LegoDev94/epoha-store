@@ -71,6 +71,18 @@ function useProducts(): Lot[] {
   return lots;
 }
 
+/* ── режим оплаты: в песочнице деньги ненастоящие ── */
+function useSandbox() {
+  const [test, setTest] = useState(false);
+  useEffect(() => {
+    fetch("api/platform")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setTest(d?.stripeMode === "test"))
+      .catch(() => {});
+  }, []);
+  return test;
+}
+
 /* ── продавцы: юридические данные для карточки товара ── */
 function useSellers(): SellerInfo[] {
   const [list, setList] = useState<SellerInfo[]>([]);
@@ -1543,6 +1555,7 @@ const inline = (s: string): React.ReactNode =>
 export default function App() {
   const lots = useProducts();
   const sellers = useSellers();
+  const sandbox = useSandbox();
   const cart = useStoredIds("epoha-cart");
   const favs = useStoredIds("epoha-favs");
   const route = useRoute();
@@ -1668,6 +1681,12 @@ export default function App() {
         <i className="ibg-b" />
         <i className="ibg-c" />
       </div>
+      {sandbox && (
+        <div className="sandbox-bar" role="status">
+          <b>TESTA REŽĪMS</b>
+          <span>Maksājumi notiek Stripe smilšu kastē — nauda netiek norakstīta. Testa karte 4242 4242 4242 4242.</span>
+        </div>
+      )}
       <div className="grain" aria-hidden="true" />
       <div className="vignette" aria-hidden="true" />
       <Header

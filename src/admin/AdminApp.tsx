@@ -633,6 +633,7 @@ function Panel() {
   const [load, setLoad] = useState({ items: true, orders: true });
   const [failed, setFailed] = useState({ items: "", orders: "" });
   const [freshAt, setFreshAt] = useState<number | null>(null);
+  const [sandbox, setSandbox] = useState(false);
 
   const isAdmin = me?.role === "admin";
 
@@ -672,7 +673,10 @@ function Panel() {
     loadProducts();
     loadOrders();
     loadStats();
-    if (me.role === "admin") loadSellers();
+    if (me.role === "admin") {
+      loadSellers();
+      api("api/admin/health").then((h) => setSandbox(h.mode === "test")).catch(() => {});
+    }
     else api("api/partner/me").then((p) => setStage(p.stage)).catch(() => {});
   }, [me, api, loadProducts, loadOrders, loadStats, loadSellers]);
 
@@ -736,6 +740,7 @@ function Panel() {
     <div className="adm">
       <header className="adm-top">
         <b>VINTAGE MĒBELES</b>
+        {sandbox && <span className="adm-sandbox" title="Платежи идут в песочнице Stripe">SANDBOX</span>}
         <span className={`adm-role adm-role-${me.role}`}>
           {isAdmin ? t("role.admin") : `продавец · ${me.name}`}
         </span>

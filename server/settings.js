@@ -38,7 +38,25 @@ const FIELDS = {
   orderEmail: { type: "string", env: "ORDER_EMAIL", def: "" },
   orderFrom: { type: "string", env: "ORDER_FROM", def: "info@sofa.lv" },
   deepseekKey: { type: "secret", env: "DEEPSEEK_API_KEY", def: "" },
+  /* Песочница Stripe: те же сценарии, но без настоящих денег.
+     Ключи боевого режима остаются в окружении сервера. */
+  stripeMode: { type: "string", env: "STRIPE_MODE", def: "live" },
+  stripeTestSecret: { type: "secret", env: "STRIPE_TEST_SECRET_KEY", def: "" },
+  stripeTestWebhook: { type: "secret", env: "STRIPE_TEST_WEBHOOK_SECRET", def: "" },
+  stripeTestConnectWebhook: { type: "secret", env: "STRIPE_TEST_CONNECT_WEBHOOK_SECRET", def: "" },
 };
+
+/** Сейчас работаем на настоящих деньгах или в песочнице. */
+export const mode = () => (get("stripeMode") === "test" ? "test" : "live");
+export const isTest = () => mode() === "test";
+
+/** Ключ Stripe и секреты вебхуков — по текущему режиму. */
+export const stripeKey = () =>
+  isTest() ? get("stripeTestSecret") : process.env.STRIPE_SECRET_KEY || "";
+export const webhookSecret = () =>
+  isTest() ? get("stripeTestWebhook") : process.env.STRIPE_WEBHOOK_SECRET || "";
+export const connectWebhookSecret = () =>
+  isTest() ? get("stripeTestConnectWebhook") : process.env.STRIPE_CONNECT_WEBHOOK_SECRET || "";
 
 export function get(name) {
   if (!cache) load();
@@ -93,9 +111,10 @@ export async function save(patch) {
 
 /** Что из настроенного реально работает — показываем строкой здоровья. */
 export const health = () => ({
-  stripe: Boolean(process.env.STRIPE_SECRET_KEY),
-  stripeWebhook: Boolean(process.env.STRIPE_WEBHOOK_SECRET),
-  connectWebhook: Boolean(process.env.STRIPE_CONNECT_WEBHOOK_SECRET),
+  mode: mode(),
+  stripe: Boolean(stripeKey()),
+  stripeWebhook: Boolean(webhookSecret()),
+  connectWebhook: Boolean(connectWebhookSecret()),
   telegram: Boolean(get("telegramToken") && get("telegramChat")),
   email: Boolean(get("resendKey") && get("orderEmail")),
   translate: Boolean(get("deepseekKey")),
