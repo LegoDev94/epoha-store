@@ -1,0 +1,7 @@
+# Документы должны иметь одинаковую контрольную сумму на всех машинах
+*.md text eol=lf
+*.js text eol=lf
+*.ts text eol=lf
+*.tsx text eol=lf
+*.css text eol=lf
+*.json text eol=lf
