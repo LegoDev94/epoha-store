@@ -208,13 +208,17 @@ export async function download(url: string, filename: string) {
     throw new Error(err.error || `HTTP ${res.status}`);
   }
   const blob = await res.blob();
+  const href = URL.createObjectURL(blob);
   const a = document.createElement("a");
-  a.href = URL.createObjectURL(blob);
+  a.href = href;
   a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+  /* Ссылку освобождаем не сразу: браузер ещё пишет файл на диск, и
+     ранний revoke отменяет скачивание на полпути. */
+  setTimeout(() => URL.revokeObjectURL(href), 60000);
+  addEventListener("pagehide", () => URL.revokeObjectURL(href), { once: true });
 }
 
 export const copy = async (text: string) => {
