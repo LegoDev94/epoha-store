@@ -18,7 +18,19 @@ export interface Lot {
   images: string[];
   source?: string;
   createdAt?: string;
+  /** null / отсутствует — товар самой площадки, иначе продавец-партнёр */
+  sellerId?: string | null;
   tr: Record<Lang, Tr>;
+}
+
+/** Юридические данные продавца: показываются покупателю до заказа. */
+export interface SellerInfo {
+  id: string;
+  name: string;
+  regNr: string;
+  vatNr: string;
+  address: string;
+  country: string;
 }
 
 /** Локальный сид — фолбэк, когда API недоступен (напр. GitHub Pages). */

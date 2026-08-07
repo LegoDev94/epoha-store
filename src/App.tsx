@@ -5,6 +5,7 @@ import {
   type Category,
   type Lang,
   type Lot,
+  type SellerInfo,
 } from "./data/catalog";
 import { LANGS, detectLang, localeOf, makeT, type T } from "./i18n";
 import { Logo } from "./Logo";
@@ -23,12 +24,15 @@ type Route =
   | { view: "cart" }
   | { view: "checkout" }
   | { view: "success"; order: string }
+  | { view: "legal"; doc: string }
   | { view: "admin" };
 
 function parseRoute(): Route {
   const h = location.hash;
   const lot = h.match(/^#\/lot\/(\d+)/);
   if (lot) return { view: "lot", id: Number(lot[1]) };
+  const doc = h.match(/^#\/legal\/([a-z]+)/);
+  if (doc) return { view: "legal", doc: doc[1] };
   if (h.startsWith("#/favs")) return { view: "favs" };
   if (h.startsWith("#/cart")) return { view: "cart" };
   if (h.startsWith("#/checkout")) return { view: "checkout" };
@@ -67,6 +71,22 @@ function useProducts(): Lot[] {
   return lots;
 }
 
+/* ── продавцы: юридические данные для карточки товара ── */
+function useSellers(): SellerInfo[] {
+  const [list, setList] = useState<SellerInfo[]>([]);
+  useEffect(() => {
+    fetch("api/sellers")
+      .then((r) => (r.ok ? r.json() : []))
+      .then((d) => Array.isArray(d) && setList(d))
+      .catch(() => {
+        /* статическая витрина — продавец только сама площадка */
+      });
+  }, []);
+  return list;
+}
+const sellerOf = (lot: Lot | undefined, sellers: SellerInfo[]) =>
+  lot?.sellerId ? sellers.find((s) => s.id === lot.sellerId) || null : null;
+
 function useStoredIds(key: string) {
   const [ids, setIds] = useState<number[]>(() => {
     try {
@@ -89,6 +109,81 @@ function useStoredIds(key: string) {
   };
 }
 type Store = ReturnType<typeof useStoredIds>;
+/** Корзина знает про правило «один заказ — один продавец». */
+type CartStore = Store & { addLot: (l: Lot) => boolean };
+
+/* ── блок продавца: кто именно продаёт этот предмет ── */
+function SellerBlock({ seller, t }: { seller: SellerInfo | null; t: T }) {
+  const rows: [string, string][] = seller
+    ? [
+        [t("seller.label.name"), seller.name],
+        [t("seller.label.regNumber"), seller.regNr],
+        [t("seller.label.vatNumber"), seller.vatNr || t("seller.value.vatNotRegistered")],
+        [t("seller.label.address"), seller.address],
+      ]
+    : [
+        [t("seller.label.name"), t("seller.platform.name")],
+        [t("seller.label.regNumber"), "40203253729"],
+        [t("seller.label.vatNumber"), "LV40203253729"],
+        [t("seller.label.address"), '"Gobas", Ģibuļu pag., Talsu nov., LV-3297'],
+      ];
+  return (
+    <section className="slr">
+      <h3 className="slr-h">{t("seller.block.title")}</h3>
+      <p className="slr-sub">{seller ? t("seller.block.subtitle") : t("seller.byPlatform")}</p>
+      <dl className="slr-rows">
+        {rows.filter(([, v]) => v).map(([k, v]) => (
+          <div key={k}>
+            <dt>{k}</dt>
+            <dd>{v}</dd>
+          </div>
+        ))}
+        <div>
+          <dt>{t("seller.label.paymentProcessing")}</dt>
+          <dd>{t("seller.value.paymentProcessing")}</dd>
+        </div>
+      </dl>
+      <p className="slr-note">{t("seller.payment.note")}</p>
+      {seller && <p className="slr-note">{t("seller.contract.note")}</p>}
+    </section>
+  );
+}
+
+/* Товары разных продавцов оплачиваются на разные счета, поэтому в одном
+   заказе они не уживаются — предлагаем очистить корзину. */
+function SellerConflict({
+  current,
+  next,
+  t,
+  onClear,
+  onCancel,
+}: {
+  current: string;
+  next: string;
+  t: T;
+  onClear: () => void;
+  onCancel: () => void;
+}) {
+  const fill = (k: string) =>
+    t(k).replace("{currentSeller}", current).replace("{newSeller}", next);
+  return (
+    <div className="sc-bg" onClick={onCancel}>
+      <div className="sc" role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}>
+        <h3>{t("cart.singleSeller.title")}</h3>
+        <p>{fill("cart.singleSeller.message")}</p>
+        <p className="sc-hint">{fill("cart.singleSeller.hint")}</p>
+        <div className="sc-btns">
+          <button className="btn-brass" onClick={onClear}>
+            {t("cart.singleSeller.clearAction")}
+          </button>
+          <button className="btn-ghost" onClick={onCancel}>
+            {t("cart.singleSeller.keepAction")}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function useReveal(dep: unknown) {
   useEffect(() => {
@@ -232,7 +327,7 @@ function LotCard({
 }: {
   l: Lot;
   favs: Store;
-  cart: Store;
+  cart: CartStore;
   lang: Lang;
   t: T;
   fmt: (n: number) => string;
@@ -277,7 +372,7 @@ function LotCard({
             className={`lot-add${cart.has(l.id) ? " in" : ""}`}
             onClick={(e) => {
               e.stopPropagation();
-              cart.has(l.id) ? go("/cart") : cart.add(l.id);
+              cart.has(l.id) ? go("/cart") : cart.addLot(l);
             }}
           >
             {cart.has(l.id) ? t("lot.inCart") : t("lot.add")}
@@ -304,7 +399,7 @@ function Header({
 }: {
   lots: Lot[];
   favs: Store;
-  cart: Store;
+  cart: CartStore;
   query: string;
   setQuery: (q: string) => void;
   cat: Category | "all";
@@ -532,13 +627,21 @@ function Footer({ t }: { t: T }) {
           </div>
           <div className="ftr-col">
             <span>{t("ftr.contact")}</span>
-            <a href="mailto:info@vintagemebeles.lv">info@vintagemebeles.lv</a>
+            <a href="mailto:info@sofa.lv">info@sofa.lv</a>
             <a href="tel:+37125674959">+371 25 674 959</a>
-            <a href="https://wa.me/37125674959" target="_blank" rel="noopener noreferrer">Telegram</a>
+            <a href="https://wa.me/37125674959" target="_blank" rel="noopener noreferrer">WhatsApp</a>
+          </div>
+          <div className="ftr-col">
+            <span>{t("legal.title")}</span>
+            <a href="#/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>{t("legal.buyer")}</a>
+            <a href="#/legal/privacy" onClick={(e) => { e.preventDefault(); go("/legal/privacy"); }}>{t("legal.privacy")}</a>
+            <a href="#/legal/partner" onClick={(e) => { e.preventDefault(); go("/legal/partner"); }}>{t("legal.partner")}</a>
           </div>
         </div>
         <div className="ftr-bottom">
-          <span>© {new Date().getFullYear()} VINTAGE MĒBELES · {t("ftr.rights")}</span>
+          <span>
+            © {new Date().getFullYear()} SIA "RANČO GOBAS" · Reģ. Nr. 40203253729 · SOFA.LV
+          </span>
           <span>
             {t("ftr.by")} <a href="https://mtbyte.io" target="_blank" rel="noopener noreferrer">METABYTE</a>
           </span>
@@ -564,7 +667,7 @@ function Home({
 }: {
   lots: Lot[];
   favs: Store;
-  cart: Store;
+  cart: CartStore;
   cat: Category | "all";
   query: string;
   sort: string;
@@ -794,6 +897,7 @@ function Lightbox({
 function LotPage({
   lot,
   lots,
+  sellers,
   favs,
   cart,
   lang,
@@ -802,13 +906,15 @@ function LotPage({
 }: {
   lot: Lot;
   lots: Lot[];
+  sellers: SellerInfo[];
   favs: Store;
-  cart: Store;
+  cart: CartStore;
   lang: Lang;
   t: T;
   fmt: (n: number) => string;
 }) {
   const tr = lot.tr[lang] ?? lot.tr.lv;
+  const seller = sellerOf(lot, sellers);
   const related = lots.filter((l) => l.cat === lot.cat && l.id !== lot.id).slice(0, 3);
   const inCart = cart.has(lot.id);
   const [zoomAt, setZoomAt] = useState<number | null>(null);
@@ -901,14 +1007,13 @@ function LotPage({
                 </button>
               ) : (
                 <>
-                  <button className="btn-brass" onClick={() => cart.add(lot.id)}>
+                  <button className="btn-brass" onClick={() => cart.addLot(lot)}>
                     {t("lot.add")}
                   </button>
                   <button
                     className="btn-ghost"
                     onClick={() => {
-                      cart.add(lot.id);
-                      go("/checkout");
+                      if (cart.addLot(lot)) go("/checkout");
                     }}
                   >
                     {t("lot.buyNow")}
@@ -928,6 +1033,7 @@ function LotPage({
               <li>{t("lot.note2")}</li>
               <li>{t("lot.note3")}</li>
             </ul>
+            <SellerBlock seller={seller} t={t} />
           </aside>
         </div>
 
@@ -946,7 +1052,7 @@ function LotPage({
   );
 }
 
-function FavsPage({ lots, favs, cart, lang, t, fmt }: { lots: Lot[]; favs: Store; cart: Store; lang: Lang; t: T; fmt: (n: number) => string }) {
+function FavsPage({ lots, favs, cart, lang, t, fmt }: { lots: Lot[]; favs: Store; cart: CartStore; lang: Lang; t: T; fmt: (n: number) => string }) {
   const items = lots.filter((l) => favs.has(l.id));
   return (
     <div className="pg">
@@ -974,7 +1080,7 @@ function FavsPage({ lots, favs, cart, lang, t, fmt }: { lots: Lot[]; favs: Store
   );
 }
 
-function CartPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; lang: Lang; t: T; fmt: (n: number) => string }) {
+function CartPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: CartStore; lang: Lang; t: T; fmt: (n: number) => string }) {
   const items = lots.filter((l) => cart.has(l.id));
   const total = items.reduce((s, l) => s + l.price, 0);
   return (
@@ -1037,8 +1143,23 @@ function CartPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; lang
   );
 }
 
-function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; lang: Lang; t: T; fmt: (n: number) => string }) {
+function CheckoutPage({
+  lots,
+  sellers,
+  cart,
+  lang,
+  t,
+  fmt,
+}: {
+  lots: Lot[];
+  sellers: SellerInfo[];
+  cart: CartStore;
+  lang: Lang;
+  t: T;
+  fmt: (n: number) => string;
+}) {
   const items = lots.filter((l) => cart.has(l.id));
+  const seller = sellerOf(items[0], sellers);
   const subtotal = items.reduce((s, l) => s + l.price, 0);
   const [delivery, setDelivery] = useState<"pickup" | "courier">("pickup");
   const [form, setForm] = useState({ name: "", contact: "", email: "", address: "", comment: "" });
@@ -1072,7 +1193,13 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
         body: JSON.stringify({ ...form, delivery, pay, lang, items: items.map((l) => l.id) }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "error");
+      if (!res.ok) {
+        /* Товар мог уйти другому покупателю, пока корзина висела открытой */
+        if (data.error === "MIXED_CART") throw new Error(t("cart.singleSeller.title"));
+        if (data.error === "ITEM_SOLD" || data.error === "ITEM_RESERVED")
+          throw new Error(t("lot.sold"));
+        throw new Error(data.error || "error");
+      }
       cart.clear();
       if (data.payUrl) {
         location.href = data.payUrl;
@@ -1224,6 +1351,16 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
 
             <aside className="cartpg-sum">
               <h3>{t("ck.your")}</h3>
+              <div className="ck-seller">
+                <span className="ck-seller-k">{t("checkout.seller.title")}</span>
+                <b>{seller ? seller.name : t("seller.platform.name")}</b>
+                {seller && <small>{t("seller.label.regNumber")} {seller.regNr}</small>}
+                <p>
+                  {seller
+                    ? t("checkout.contract.notice").replace("{sellerName}", seller.name)
+                    : t("seller.byPlatform")}
+                </p>
+              </div>
               {items.map((l) => (
                 <div key={l.id} className="cartpg-row">
                   <span>№{l.n} · {(l.tr[lang] ?? l.tr.lv).title}</span>
@@ -1246,8 +1383,9 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
                 style={{ width: "100%", justifyContent: "center", opacity: ok ? 1 : 0.7 }}
                 disabled={busy}
               >
-                {busy ? "…" : t("ck.payCard")}
+                {busy ? t("checkout.submit.processing") : t("checkout.submit.button")}
               </button>
+              <p className="ck-oblig">{t("checkout.submit.hint")}</p>
               <button
                 type="button"
                 className="btn-ghost ck-later"
@@ -1259,8 +1397,16 @@ function CheckoutPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: Store; 
               {!ok && Object.keys(touched).length > 0 && (
                 <p className="ck-form-err">{t("ck.fixFields")}</p>
               )}
+              <div className="ck-legal">
+                <b>{t("checkout.withdrawal.title")}</b>
+                <p>{t("checkout.withdrawal.notice")}</p>
+                <a href="#/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>
+                  {t("checkout.withdrawal.link")} →
+                </a>
+              </div>
+              <p className="cart-note">{t("checkout.payment.note")}</p>
               <p className="cart-note">{t("ck.payHint")}</p>
-              <p className="cart-note">{t("ck.agree")}</p>
+              <p className="cart-note">{t("checkout.terms.agreement")}</p>
             </aside>
           </form>
         )}
@@ -1300,11 +1446,107 @@ function SuccessPage({ order, t }: { order: string; t: T }) {
   );
 }
 
+/* ── публикуемые документы площадки ──
+   Текст живёт на сервере: его же хеш попадает в запись о принятии
+   условий партнёром, поэтому показываем ровно то, что подписано. */
+function LegalPage({ doc, t }: { doc: string; t: T }) {
+  const [data, setData] = useState<{ title: string; version: string; hash: string; body: string } | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    setData(null);
+    setErr("");
+    fetch(`api/legal/${doc}`)
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("404"))))
+      .then(setData)
+      .catch(() => setErr("404"));
+  }, [doc]);
+
+  return (
+    <div className="pg">
+      <div className="wrap wrap-narrow">
+        <nav className="crumbs">
+          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+          <span>/</span>
+          <b>{t("legal.title")}</b>
+        </nav>
+        {err && <p className="empty">{t("cat.empty")}</p>}
+        {!data && !err && <p className="lgl-load">{t("legal.loading")}</p>}
+        {data && (
+          <article className="lgl">
+            <header className="lgl-head">
+              <h1>{data.title}</h1>
+              <p>
+                {t("legal.version")} {data.version} · {t("legal.checksum")}{" "}
+                <code>{data.hash.slice(0, 16)}…</code>
+              </p>
+            </header>
+            <Markdown text={data.body} />
+            <a className="lgl-back" href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>
+              {t("legal.back")}
+            </a>
+          </article>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** Небольшой markdown: заголовки, списки, жирный, абзацы. */
+function Markdown({ text }: { text: string }) {
+  const blocks = useMemo(() => {
+    const out: React.ReactNode[] = [];
+    let list: string[] = [];
+    const flush = () => {
+      if (list.length) {
+        out.push(
+          <ul key={`l${out.length}`}>
+            {list.map((li, i) => (
+              <li key={i}>{inline(li)}</li>
+            ))}
+          </ul>
+        );
+        list = [];
+      }
+    };
+    for (const raw of String(text).split("\n")) {
+      const s = raw.trim();
+      if (!s || s === "---") {
+        flush();
+        continue;
+      }
+      const h = s.match(/^(#{1,4})\s+(.*)$/);
+      if (h) {
+        flush();
+        const lvl = h[1].length;
+        const inner = inline(h[2]);
+        out.push(
+          lvl <= 1 ? <h2 key={out.length}>{inner}</h2> : lvl === 2 ? <h3 key={out.length}>{inner}</h3> : <h4 key={out.length}>{inner}</h4>
+        );
+        continue;
+      }
+      const li = s.match(/^[-*]\s+(.*)$/);
+      if (li) {
+        list.push(li[1]);
+        continue;
+      }
+      flush();
+      out.push(<p key={out.length}>{inline(s)}</p>);
+    }
+    flush();
+    return out;
+  }, [text]);
+  return <div className="lgl-body">{blocks}</div>;
+}
+const inline = (s: string): React.ReactNode =>
+  s.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part));
+
 export default function App() {
   const lots = useProducts();
+  const sellers = useSellers();
   const cart = useStoredIds("epoha-cart");
   const favs = useStoredIds("epoha-favs");
   const route = useRoute();
+  const [conflict, setConflict] = useState<{ lot: Lot; current: string; next: string } | null>(null);
   const [lang, setLangState] = useState<Lang>(detectLang);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<Category | "all">("all");
@@ -1322,6 +1564,28 @@ export default function App() {
     const loc = localeOf(lang);
     return (n: number) => n.toLocaleString(loc);
   }, [lang]);
+
+  /* Один заказ — один продавец: платёж уходит на один счёт, поэтому
+     смешанную корзину не собираем, а честно предлагаем выбор. */
+  const nameOf = (id: string | null | undefined) =>
+    (id && sellers.find((s) => s.id === id)?.name) || t("seller.platform.name");
+  const cartApi: CartStore = useMemo(
+    () => ({
+      ...cart,
+      addLot: (l: Lot) => {
+        const inCart = lots.filter((x) => cart.has(x.id));
+        const current = inCart[0];
+        if (current && (current.sellerId || null) !== (l.sellerId || null)) {
+          setConflict({ lot: l, current: nameOf(current.sellerId), next: nameOf(l.sellerId) });
+          return false;
+        }
+        cart.add(l.id);
+        return true;
+      },
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cart.ids, lots, sellers, lang]
+  );
 
   const setLang = (l: Lang) => {
     setLangState(l);
@@ -1409,7 +1673,7 @@ export default function App() {
       <Header
         lots={lots}
         favs={favs}
-        cart={cart}
+        cart={cartApi}
         query={query}
         setQuery={setQuery}
         cat={cat}
@@ -1423,7 +1687,7 @@ export default function App() {
         <Home
           lots={lots}
           favs={favs}
-          cart={cart}
+          cart={cartApi}
           cat={cat}
           query={query}
           sort={sort}
@@ -1435,12 +1699,26 @@ export default function App() {
         />
       )}
       {route.view === "lot" && lot && (
-        <LotPage lot={lot} lots={lots} favs={favs} cart={cart} lang={lang} t={t} fmt={fmt} />
+        <LotPage lot={lot} lots={lots} sellers={sellers} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
       )}
-      {route.view === "favs" && <FavsPage lots={lots} favs={favs} cart={cart} lang={lang} t={t} fmt={fmt} />}
-      {route.view === "cart" && <CartPage lots={lots} cart={cart} lang={lang} t={t} fmt={fmt} />}
-      {route.view === "checkout" && <CheckoutPage lots={lots} cart={cart} lang={lang} t={t} fmt={fmt} />}
+      {route.view === "favs" && <FavsPage lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
+      {route.view === "cart" && <CartPage lots={lots} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
+      {route.view === "checkout" && <CheckoutPage lots={lots} sellers={sellers} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
       {route.view === "success" && <SuccessPage order={route.order} t={t} />}
+      {route.view === "legal" && <LegalPage doc={route.doc} t={t} />}
+      {conflict && (
+        <SellerConflict
+          current={conflict.current}
+          next={conflict.next}
+          t={t}
+          onClear={() => {
+            cart.clear();
+            cart.add(conflict.lot.id);
+            setConflict(null);
+          }}
+          onCancel={() => setConflict(null)}
+        />
+      )}
       <Footer t={t} />
       <WhatsApp t={t} />
     </>

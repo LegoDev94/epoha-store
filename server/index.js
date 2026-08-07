@@ -11,6 +11,9 @@ import fs from "node:fs";
 import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import * as connect from "./connect.js";
+import * as legal from "./legal.js";
+import { HOLD_DAYS, orderMoney, payoutState, releaseDate, toCents, toEur } from "./money.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -42,6 +45,27 @@ const readJson = async (file, fallback) => {
 };
 const writeJson = async (file, data) =>
   fsp.writeFile(file, JSON.stringify(data, null, 1), "utf8");
+
+/* Вебхук Stripe и возврат покупателя на сайт приходят одновременно, а
+   файл читается целиком и переписывается целиком — без очереди одна
+   запись затрёт другую. Все изменения файла проходят через неё. */
+const queues = new Map();
+function withFile(file, fn) {
+  const next = (queues.get(file) || Promise.resolve()).then(fn, fn);
+  queues.set(
+    file,
+    next.catch(() => {})
+  );
+  return next;
+}
+/** Прочитать → изменить → записать под очередью. */
+const updateJson = (file, fallback, mutate) =>
+  withFile(file, async () => {
+    const data = await readJson(file, fallback);
+    const result = await mutate(data);
+    await writeJson(file, data);
+    return result;
+  });
 
 const loadProducts = () => readJson(STORE, []);
 const saveProducts = (list) => writeJson(STORE, list);
@@ -116,6 +140,38 @@ const split = (gross, rate) => {
   const fee = Math.round(gross * rate) / 100;
   return { gross, rate, fee, net: Math.round((gross - fee) * 100) / 100 };
 };
+
+/* ── статус партнёра ──
+   draft → анкета не заполнена; terms → условия не приняты;
+   stripe → онбординг Stripe не завершён; review → ждёт проверки площадки;
+   active → торгует; suspended → приостановлен. */
+const REQUIRED_COMPANY = ["name", "regNr", "address", "phone", "email", "contactPerson"];
+
+const companyReady = (s) => REQUIRED_COMPANY.every((f) => String(s.company?.[f] || "").trim());
+const termsReady = (s) => Boolean(s.terms?.acceptedAt);
+const stripeReady = (s) => Boolean(s.stripe?.chargesEnabled && s.stripe?.detailsSubmitted);
+
+/** Шаг, на котором партнёр стоит сейчас. */
+function partnerStage(s) {
+  if (s.status === "suspended" || s.active === false) return "suspended";
+  if (!companyReady(s)) return "draft";
+  if (!termsReady(s)) return "terms";
+  if (!stripeReady(s)) return "stripe";
+  if (s.status !== "active") return "review";
+  return "active";
+}
+/** Продавать можно только после проверки площадкой и готовности Stripe. */
+const canSell = (s) => partnerStage(s) === "active";
+
+/** Данные продавца, которые видит покупатель в карточке товара. */
+const publicSeller = (s) => ({
+  id: s.id,
+  name: s.company?.name || s.name,
+  regNr: s.company?.regNr || "",
+  vatNr: s.company?.vatNr || "",
+  address: s.company?.address || "",
+  country: s.company?.country || "LV",
+});
 
 /* ── импорт товара по ссылке ── */
 const meta = (html, attr, name) => {
@@ -340,7 +396,37 @@ const upload = multer({
   limits: { fileSize: 12 * 1024 * 1024 },
 });
 
-app.get("/api/products", async (_req, res) => res.json(await loadProducts()));
+/* Витрина показывает товар партнёра только когда партнёр проверен
+   площадкой и его счёт Stripe готов принимать платежи. */
+app.get("/api/products", async (_req, res) => {
+  const [list, sellers] = await Promise.all([loadProducts(), loadSellers()]);
+  const live = new Set(sellers.filter(canSell).map((s) => s.id));
+  res.json(
+    list
+      .filter((p) => !p.sellerId || live.has(p.sellerId))
+      .map(({ reservedBy, reservedUntil, ...p }) => p)
+  );
+});
+
+/** Юридические данные продавцов — показываются в карточке товара. */
+app.get("/api/sellers", async (_req, res) => {
+  const sellers = await loadSellers();
+  res.json(sellers.filter(canSell).map(publicSeller));
+});
+
+/* Публикуемые документы площадки */
+app.get("/api/legal", (_req, res) => res.json(legal.listDocs()));
+app.get("/api/legal/:id", (req, res) => {
+  try {
+    const d = legal.loadDoc(req.params.id);
+    res.json({ id: d.id, title: d.title, version: d.version, lang: d.lang, hash: d.hash, body: d.body });
+  } catch {
+    res.status(404).json({ error: "not found" });
+  }
+});
+app.get("/api/platform", (_req, res) =>
+  res.json({ ...legal.PLATFORM, commission: COMMISSION, holdDays: HOLD_DAYS, deliveryFee: DELIVERY_FEE })
+);
 
 /* ── Заказ: сначала регистрируем, потом ведём на оплату ──
    Суммы считает сервер по своему каталогу — клиенту не доверяем. */
@@ -397,78 +483,154 @@ async function notifyOwner(order) {
   if (!tg && !resend) console.log("[vm] заказ (уведомления не настроены):\n" + text);
 }
 
-async function stripeSession(order) {
-  const key = process.env.STRIPE_SECRET_KEY;
-  if (!key) return null;
-  const form = new URLSearchParams();
-  form.set("mode", "payment");
-  form.set(
-    "success_url",
-    `${BASE_URL}/#/success/${order.order}?paid=1&s={CHECKOUT_SESSION_ID}`
-  );
-  form.set("cancel_url", `${BASE_URL}/#/checkout`);
-  form.set("metadata[order]", order.order);
-  if (order.email) form.set("customer_email", order.email);
-  order.items.forEach((it, i) => {
-    form.set(`line_items[${i}][quantity]`, "1");
-    form.set(`line_items[${i}][price_data][currency]`, "eur");
-    form.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(it.price * 100)));
-    form.set(`line_items[${i}][price_data][product_data][name]`, `№${it.n} ${it.title}`.slice(0, 120));
-  });
-  if (order.deliveryFee > 0) {
-    const i = order.items.length;
-    form.set(`line_items[${i}][quantity]`, "1");
-    form.set(`line_items[${i}][price_data][currency]`, "eur");
-    form.set(`line_items[${i}][price_data][unit_amount]`, String(Math.round(order.deliveryFee * 100)));
-    form.set(`line_items[${i}][price_data][product_data][name]`, "Piegade lidz durvim Latvija");
+/** Партнёру пишем только об оплаченном заказе — до оплаты отгружать нечего. */
+async function notifySeller(order) {
+  if (!order.sellerId || order.status !== "paid") return;
+  const seller = (await loadSellers()).find((s) => s.id === order.sellerId);
+  const to = seller?.company?.email || seller?.contact || "";
+  const resend = process.env.RESEND_API_KEY;
+  const text = [
+    `Apmaksāts pasūtījums ${order.order} (sofa.lv)`,
+    order.items.map((i) => `• №${i.n} ${i.title} — €${i.price}`).join("\n"),
+    order.delivery === "courier"
+      ? `Piegāde līdz durvīm (organizē sofa.lv): ${order.address}`
+      : "Izņemšana Talsos",
+    `Pircējs: ${order.name} · ${order.contact} · ${order.email}`,
+    `Jums izmaksājamā summa: €${toEur(order.partnerNetCents)} (preces cena mīnus SOFA.LV komisija ${order.commissionBps / 100} %)`,
+    `Izmaksa — ne agrāk kā ${HOLD_DAYS} dienas pēc preces nodošanas pircējam.`,
+  ].join("\n");
+  if (resend && to) {
+    await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
+      body: JSON.stringify({
+        from: process.env.ORDER_FROM || "orders@sofa.lv",
+        to,
+        subject: `sofa.lv · ${order.order}`,
+        text,
+      }),
+    }).catch((e) => console.warn("[sofa] письмо партнёру:", String(e.message || e)));
+  } else {
+    console.log(`[sofa] партнёру ${to || order.sellerId} (почта не настроена):\n${text}`);
   }
-  const res = await fetch("https://api.stripe.com/v1/checkout/sessions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: form,
-  });
-  if (!res.ok) throw new Error(`Stripe ${res.status}: ${(await res.text()).slice(0, 180)}`);
-  return (await res.json()).url || null;
 }
+
+/** Ссылка на оплату. Товар партнёра — direct charge на его аккаунт. */
+async function stripeSession(order) {
+  if (!connect.hasStripe()) return null;
+  const sess = await connect.checkoutSession({
+    order,
+    account: order.stripeAccountId || null,
+    applicationFeeCents: order.applicationFeeCents,
+    successUrl: `${BASE_URL}/#/success/${order.order}?paid=1&s={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${BASE_URL}/#/checkout`,
+    expiresAt: Math.floor(Date.now() / 1000) + RESERVE_MIN * 60,
+    locale: order.lang,
+  });
+  order.session = sess.id;
+  return sess.url || null;
+}
+
+/* ── резерв товара ──
+   Предметы штучные: пока покупатель платит, товар держим за ним,
+   иначе двое оплатят один и тот же диван. */
+const RESERVE_MIN = Number(process.env.RESERVE_MINUTES || 35);
+const reservedByOther = (p, orderId, now = Date.now()) =>
+  Boolean(p.reservedUntil && Date.parse(p.reservedUntil) > now && p.reservedBy && p.reservedBy !== orderId);
+
+const reserveItems = (ids, orderId) =>
+  updateJson(STORE, [], (list) => {
+    const until = new Date(Date.now() + RESERVE_MIN * 60000).toISOString();
+    for (const p of list) if (ids.includes(p.id)) { p.reservedBy = orderId; p.reservedUntil = until; }
+  });
+
+const releaseItems = (ids, { sold = false } = {}) =>
+  updateJson(STORE, [], (list) => {
+    for (const p of list)
+      if (ids.includes(p.id)) {
+        delete p.reservedBy;
+        delete p.reservedUntil;
+        if (sold) p.sold = true;
+      }
+  });
+
+/** Номер заказа: сквозной счётчик, а не обрезанное время (оно повторяется). */
+const nextOrderNumber = (orders) => {
+  const max = orders.reduce((m, o) => {
+    const n = Number(String(o.order || "").replace(/\D/g, ""));
+    return Number.isFinite(n) ? Math.max(m, n) : m;
+  }, 1000);
+  return `VM-${max + 1}`;
+};
 
 app.post("/api/orders", async (req, res) => {
   try {
     const b = req.body || {};
     const catalog = await loadProducts();
-    const items = (Array.isArray(b.items) ? b.items : [])
+    const picked = (Array.isArray(b.items) ? b.items : [])
       .map((id) => catalog.find((p) => p.id === Number(id)))
-      .filter(Boolean)
-      .map((p) => ({
-        id: p.id,
-        n: p.n,
-        price: Number(p.price) || 0,
-        title: p.tr?.lv?.title || p.tr?.en?.title || `#${p.id}`,
-        img: p.images?.[0] || "",
-        sellerId: p.sellerId || null,
-      }));
-    if (!items.length) return res.status(400).json({ error: "Grozs ir tukss" });
+      .filter(Boolean);
+
+    if (!picked.length) return res.status(400).json({ error: "Grozs ir tukšs" });
     if (!String(b.name || "").trim() || !String(b.contact || "").trim())
-      return res.status(400).json({ error: "Nepieciesams vards un kontakts" });
+      return res.status(400).json({ error: "Nepieciešams vārds un kontakts" });
     if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(String(b.email || "").trim()))
-      return res.status(400).json({ error: "Nepieciesams derigs e-pasts" });
+      return res.status(400).json({ error: "Nepieciešams derīgs e-pasts" });
 
     const delivery = b.delivery === "courier" ? "courier" : "pickup";
     if (delivery === "courier" && !String(b.address || "").trim())
-      return res.status(400).json({ error: "Nepieciesama piegades adrese" });
+      return res.status(400).json({ error: "Nepieciešama piegādes adrese" });
 
-    const subtotal = items.reduce((s, i) => s + i.price, 0);
-    const deliveryFee = delivery === "courier" ? DELIVERY_FEE : 0;
+    /* Один заказ — один продавец: платёж уходит на один счёт. */
+    const sellerIds = [...new Set(picked.map((p) => p.sellerId || "shop"))];
+    if (sellerIds.length > 1)
+      return res.status(409).json({ error: "MIXED_CART", sellers: sellerIds });
+
+    const sellersList = await loadSellers();
+    const sellerId = sellerIds[0] === "shop" ? null : sellerIds[0];
+    const seller = sellerId ? sellersList.find((s) => s.id === sellerId) : null;
+    if (sellerId && !seller) return res.status(409).json({ error: "Pārdevējs nav pieejams" });
+    if (seller && !canSell(seller))
+      return res.status(409).json({ error: "Šī pārdevēja preces pagaidām nav pieejamas" });
+
+    /* Товар мог быть продан или занят другим покупателем, пока висела корзина */
+    const sold = picked.find((p) => p.sold);
+    if (sold) return res.status(409).json({ error: "ITEM_SOLD", item: sold.id });
+    const busy = picked.find((p) => reservedByOther(p, null));
+    if (busy) return res.status(409).json({ error: "ITEM_RESERVED", item: busy.id });
+
+    const items = picked.map((p) => ({
+      id: p.id,
+      n: p.n,
+      cents: toCents(p.price),
+      price: Number(p.price) || 0,
+      title: p.tr?.lv?.title || p.tr?.en?.title || `#${p.id}`,
+      img: p.images?.[0] || "",
+      sellerId: p.sellerId || null,
+    }));
+
+    const money = orderMoney({
+      itemsCents: items.reduce((s, i) => s + i.cents, 0),
+      shippingCents: delivery === "courier" ? toCents(DELIVERY_FEE) : 0,
+      commissionBps: Math.round(Number(seller?.commission ?? COMMISSION) * 100),
+      partner: Boolean(seller),
+    });
+
+    const id = crypto.randomUUID();
     const order = {
-      order: `VM-${String(Date.now()).slice(-6)}`,
+      id,
       at: new Date().toISOString(),
       status: "new",
       items,
-      subtotal,
-      deliveryFee,
-      total: subtotal + deliveryFee,
+      ...money,
+      /* суммы в евро — для писем и панели */
+      subtotal: toEur(money.itemsCents),
+      deliveryFee: toEur(money.shippingCents),
+      total: toEur(money.chargeCents),
+      sellerId,
+      sellerName: seller?.company?.name || seller?.name || "",
+      sellerType: seller ? "partner" : "shop",
+      stripeAccountId: seller?.stripe?.accountId || null,
       delivery,
       name: String(b.name).trim(),
       contact: String(b.contact).trim(),
@@ -478,22 +640,11 @@ app.post("/api/orders", async (req, res) => {
       lang: b.lang || "lv",
     };
 
-    /* Разделение выручки: продавцам — чистыми, площадке — комиссия */
-    const sellersList = await loadSellers();
-    const bySeller = new Map();
-    for (const it of items) {
-      const key = it.sellerId || "shop";
-      bySeller.set(key, (bySeller.get(key) || 0) + it.price);
-    }
-    order.splits = [...bySeller.entries()].map(([key, sum]) => {
-      const sid = key === "shop" ? null : key;
-      const rate = sid ? Number(sellersList.find((x) => x.id === sid)?.commission ?? COMMISSION) : 0;
-      return { sellerId: sid, ...split(sum, rate) };
+    await updateJson(ORDERS, [], (list) => {
+      order.order = nextOrderNumber(list);
+      list.unshift(order);
     });
-
-    const list = await readJson(ORDERS, []);
-    list.unshift(order);
-    await writeJson(ORDERS, list.slice(0, 500));
+    await reserveItems(items.map((i) => i.id), id);
     notifyOwner(order);
 
     let payUrl = null;
@@ -502,9 +653,13 @@ app.post("/api/orders", async (req, res) => {
       try {
         payUrl = await stripeSession(order);
         if (!payUrl) payError = "no-stripe";
+        else await updateJson(ORDERS, [], (list) => {
+          const o = list.find((x) => x.id === id);
+          if (o) o.session = order.session;
+        });
       } catch (e) {
         payError = String(e.message || e);
-        console.warn("[vm] stripe:", payError);
+        console.warn("[sofa] stripe:", payError);
       }
     }
     res.json({ order: order.order, total: order.total, payUrl, payError });
@@ -513,67 +668,478 @@ app.post("/api/orders", async (req, res) => {
   }
 });
 
+/* ── отметка оплаты ──
+   Вебхук и возврат покупателя на сайт приходят одновременно, поэтому
+   отметку делает одна идемпотентная функция под очередью записи. */
+async function markPaid(match, info = {}) {
+  const changed = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => (match.id ? x.id === match.id : x.order === match.order));
+    if (!o || o.status === "paid" || o.status === "done") return null;
+    o.status = "paid";
+    o.paidAt = new Date().toISOString();
+    o.session = info.session || o.session || "";
+    o.paymentIntent = info.paymentIntent || o.paymentIntent || "";
+    o.charge = info.charge || o.charge || "";
+    if (info.stripeFeeCents) o.stripeFeeCents = info.stripeFeeCents;
+    if (info.applicationFeeCents) o.applicationFeeActualCents = info.applicationFeeCents;
+    return { ...o };
+  });
+  if (changed) {
+    await releaseItems(changed.items.map((i) => i.id), { sold: true });
+    notifyOwner(changed);
+    notifySeller(changed).catch(() => {});
+  }
+  return changed;
+}
+
+/** Заказ отменён/просрочен: снимаем резерв, товар снова в продаже. */
+async function closeOrder(match, status) {
+  const changed = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => (match.id ? x.id === match.id : x.order === match.order));
+    if (!o || o.status === "paid" || o.status === "done") return null;
+    o.status = status;
+    return { ...o };
+  });
+  if (changed) await releaseItems(changed.items.map((i) => i.id));
+  return changed;
+}
+
 /* Возврат из Stripe: сверяем сессию напрямую с их API — клиенту не
    доверяем, статус ставим только по ответу Stripe. */
 app.post("/api/orders/:num/confirm", async (req, res) => {
   try {
-    const key = process.env.STRIPE_SECRET_KEY;
     const sid = String(req.body?.session || "").trim();
-    if (!key || !/^cs_/.test(sid)) return res.status(400).json({ error: "no session" });
+    if (!connect.hasStripe() || !/^cs_/.test(sid)) return res.status(400).json({ error: "no session" });
 
-    const r = await fetch(`https://api.stripe.com/v1/checkout/sessions/${encodeURIComponent(sid)}`, {
-      headers: { Authorization: `Bearer ${key}` },
-    });
-    if (!r.ok) return res.status(400).json({ error: `stripe ${r.status}` });
-    const sess = await r.json();
     const num = req.params.num;
-    if (sess?.metadata?.order !== num) return res.status(400).json({ error: "order mismatch" });
+    const order = (await readJson(ORDERS, [])).find((o) => o.order === num);
+    if (!order) return res.status(404).json({ error: "order not found" });
+
+    const sess = await connect.getSession(sid, order.stripeAccountId);
+    if (sess?.metadata?.order_id !== order.id && sess?.metadata?.order !== num)
+      return res.status(400).json({ error: "order mismatch" });
 
     const paid = sess.payment_status === "paid";
-    const list = await readJson(ORDERS, []);
-    const idx = list.findIndex((o) => o.order === num);
-    if (idx >= 0 && paid && list[idx].status !== "paid") {
-      list[idx].status = "paid";
-      list[idx].paidAt = new Date().toISOString();
-      list[idx].stripe = sess.id;
-      await writeJson(ORDERS, list);
-      notifyOwner(list[idx]);
-    }
+    if (paid) await markPaid({ id: order.id }, sessionMoney(sess));
     res.json({ paid });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
   }
 });
 
-/* Stripe помечает заказ оплаченным через вебхук */
-app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async (req, res) => {
-  const secret = process.env.STRIPE_WEBHOOK_SECRET;
-  try {
-    const raw = req.body.toString("utf8");
-    if (secret) {
-      const sig = req.get("stripe-signature") || "";
-      const ts = sig.match(/t=(\d+)/)?.[1] || "";
-      const v1 = sig.match(/v1=([a-f0-9]+)/)?.[1] || "";
-      const expected = crypto.createHmac("sha256", secret).update(`${ts}.${raw}`).digest("hex");
-      if (!v1 || v1.length !== expected.length || !crypto.timingSafeEqual(Buffer.from(v1), Buffer.from(expected)))
-        return res.status(400).send("bad signature");
-    }
-    const event = JSON.parse(raw);
-    if (event.type === "checkout.session.completed") {
-      const num = event.data?.object?.metadata?.order;
-      const list = await readJson(ORDERS, []);
-      const idx = list.findIndex((o) => o.order === num);
-      if (idx >= 0) {
-        list[idx].status = "paid";
-        list[idx].paidAt = new Date().toISOString();
-        await writeJson(ORDERS, list);
-        notifyOwner(list[idx]);
+/** Фактические суммы из оплаченной сессии (комиссия Stripe, id платежа). */
+function sessionMoney(sess) {
+  const pi = typeof sess.payment_intent === "object" ? sess.payment_intent : null;
+  const ch = pi && typeof pi.latest_charge === "object" ? pi.latest_charge : null;
+  const bt = ch && typeof ch.balance_transaction === "object" ? ch.balance_transaction : null;
+  return {
+    session: sess.id,
+    paymentIntent: pi?.id || (typeof sess.payment_intent === "string" ? sess.payment_intent : ""),
+    charge: ch?.id || "",
+    stripeFeeCents: bt?.fee || 0,
+    applicationFeeCents: typeof ch?.application_fee_amount === "number" ? ch.application_fee_amount : 0,
+  };
+}
+
+/* ── вебхуки Stripe ──
+   Два адреса: события площадки и события аккаунтов партнёров (у каждого
+   свой секрет). Подпись обязательна: без неё пометить заказ оплаченным
+   мог бы кто угодно. */
+const EVENTS = path.join(DATA_DIR, "events.json");
+
+/** Уже обработанное событие второй раз не проводим. */
+const seenEvent = (id) =>
+  updateJson(EVENTS, { ids: [] }, (data) => {
+    if (data.ids.includes(id)) return true;
+    data.ids.push(id);
+    if (data.ids.length > 5000) data.ids.splice(0, data.ids.length - 5000);
+    return false;
+  });
+
+const findOrder = async (obj) => {
+  const list = await readJson(ORDERS, []);
+  const md = obj?.metadata || {};
+  return (
+    list.find((o) => o.id === md.order_id) ||
+    list.find((o) => o.id === obj?.client_reference_id) ||
+    list.find((o) => o.order === md.order_number || o.order === md.order) ||
+    (obj?.payment_intent && list.find((o) => o.paymentIntent === obj.payment_intent)) ||
+    (obj?.id && list.find((o) => o.session === obj.id || o.paymentIntent === obj.id || o.charge === obj.id)) ||
+    (obj?.charge && list.find((o) => o.charge === obj.charge)) ||
+    null
+  );
+};
+
+async function handleEvent(event) {
+  const obj = event.data?.object || {};
+  const type = event.type;
+
+  if (type === "account.updated" && event.account) {
+    await updateJson(SELLERS, [], (list) => {
+      const s = list.find((x) => x.stripe?.accountId === event.account);
+      if (s) s.stripe = { ...s.stripe, ...connect.accountState(obj) };
+    });
+    return;
+  }
+  if (type === "account.application.deauthorized" && event.account) {
+    await updateJson(SELLERS, [], (list) => {
+      const s = list.find((x) => x.stripe?.accountId === event.account);
+      if (s) {
+        s.status = "suspended";
+        s.stripe = { ...s.stripe, chargesEnabled: false, payoutsEnabled: false, disabledReason: "deauthorized" };
       }
+    });
+    return;
+  }
+
+  const order = await findOrder(obj);
+  if (!order) {
+    if (/checkout|payment_intent|charge|refund/.test(type))
+      console.warn(`[sofa] вебхук ${type} без заказа:`, obj.id);
+    return;
+  }
+  /* Событие партнёрского аккаунта должно относиться к его же заказу */
+  if (event.account && order.stripeAccountId && event.account !== order.stripeAccountId) {
+    console.warn(`[sofa] вебхук ${type}: чужой аккаунт ${event.account} для ${order.order}`);
+    return;
+  }
+
+  switch (type) {
+    case "checkout.session.completed":
+      if (obj.payment_status === "paid") await markPaid({ id: order.id }, sessionMoney(obj));
+      break;
+    case "payment_intent.succeeded":
+      await markPaid({ id: order.id }, { paymentIntent: obj.id, charge: obj.latest_charge || "" });
+      break;
+    case "checkout.session.expired":
+      await closeOrder({ id: order.id }, "expired");
+      break;
+    case "charge.refunded":
+      await updateJson(ORDERS, [], (list) => {
+        const o = list.find((x) => x.id === order.id);
+        if (!o) return;
+        o.refundedCents = obj.amount_refunded || 0;
+        o.refundedAt = new Date().toISOString();
+        if ((obj.amount_refunded || 0) >= (obj.amount || 0)) o.status = "cancelled";
+      });
+      break;
+    case "charge.dispute.created":
+      await updateJson(ORDERS, [], (list) => {
+        const o = list.find((x) => x.id === order.id);
+        if (o) { o.disputeAt = new Date().toISOString(); o.disputeId = obj.id; }
+      });
+      console.warn(`[sofa] СПОР по заказу ${order.order}: ${obj.reason}`);
+      break;
+    case "charge.dispute.closed":
+      await updateJson(ORDERS, [], (list) => {
+        const o = list.find((x) => x.id === order.id);
+        if (o) { o.disputeClosedAt = new Date().toISOString(); o.disputeStatus = obj.status; }
+      });
+      break;
+    default:
+      break;
+  }
+}
+
+function webhookRoute(path_, secretEnv) {
+  app.post(path_, express.raw({ type: "application/json" }), async (req, res) => {
+    try {
+      const secret = process.env[secretEnv];
+      if (!secret) {
+        console.warn(`[sofa] ${secretEnv} не задан — вебхук отклонён`);
+        return res.status(500).send("webhook secret missing");
+      }
+      const event = connect.verifySignature({
+        raw: req.body.toString("utf8"),
+        header: req.get("stripe-signature"),
+        secret,
+      });
+      /* Отвечаем сразу: Stripe ждёт 200 и повторяет доставку три дня. */
+      res.json({ received: true });
+      if (await seenEvent(event.id)) return;
+      await handleEvent(event).catch((e) => console.warn("[sofa] вебхук:", String(e.message || e)));
+    } catch (e) {
+      res.status(400).send(String(e.message || e));
     }
-    res.json({ received: true });
+  });
+}
+webhookRoute("/api/stripe/webhook", "STRIPE_WEBHOOK_SECRET");
+webhookRoute("/api/stripe/webhook/connect", "STRIPE_CONNECT_WEBHOOK_SECRET");
+
+/* ── кабинет партнёра ─────────────────────────────────────────────
+   Партнёр проходит четыре шага: анкета → договор → Stripe → проверка. */
+
+const sellerSelf = (req, res, next) =>
+  req.actor?.role === "seller" ? next() : res.status(403).json({ error: "только для партнёра" });
+
+/** Карточка партнёра для его собственного кабинета. */
+const partnerView = (s) => ({
+  id: s.id,
+  login: s.login,
+  name: s.name,
+  commission: Number(s.commission ?? COMMISSION),
+  stage: partnerStage(s),
+  status: s.status || "draft",
+  company: s.company || {},
+  terms: s.terms
+    ? {
+        version: s.terms.termsVersion,
+        title: s.terms.termsTitle,
+        acceptedAt: s.terms.acceptedAt,
+        sha256: s.terms.termsSha256,
+        representative: s.terms.representativeName,
+      }
+    : null,
+  stripe: s.stripe || null,
+  holdDays: HOLD_DAYS,
+});
+
+app.get("/api/partner/me", auth, sellerSelf, async (req, res) => {
+  const s = (await loadSellers()).find((x) => x.id === req.actor.id);
+  if (!s) return res.status(404).json({ error: "not found" });
+  res.json(partnerView(s));
+});
+
+/** Анкета компании. Пока не принят договор — данные можно править. */
+app.post("/api/partner/company", auth, sellerSelf, async (req, res) => {
+  const b = req.body?.company || {};
+  const text = (v, max = 200) => String(v || "").trim().slice(0, max);
+  const company = {
+    name: text(b.name),
+    form: b.form === "individual" ? "individual" : "company",
+    regNr: text(b.regNr, 40),
+    vatNr: text(b.vatNr, 40),
+    address: text(b.address),
+    actualAddress: text(b.actualAddress),
+    country: text(b.country, 2).toUpperCase() || "LV",
+    phone: text(b.phone, 40),
+    email: text(b.email, 120),
+    contactPerson: text(b.contactPerson),
+    contactPosition: text(b.contactPosition),
+    iban: text(b.iban, 42).replace(/\s+/g, ""),
+    goodsOrigin: text(b.goodsOrigin, 1000),
+    legalGoods: Boolean(b.legalGoods),
+  };
+  if (!company.name || !company.regNr)
+    return res.status(400).json({ error: "Nepieciešams nosaukums un reģistrācijas numurs" });
+  if (!company.legalGoods)
+    return res.status(400).json({ error: "Nepieciešams apliecinājums par preču likumīgu izcelsmi" });
+
+  const out = await updateJson(SELLERS, [], (list) => {
+    const s = list.find((x) => x.id === req.actor.id);
+    if (!s) return null;
+    /* После принятия условий реквизиты меняет только площадка */
+    if (s.terms?.acceptedAt) {
+      s.company = { ...s.company, phone: company.phone, email: company.email, contactPerson: company.contactPerson, contactPosition: company.contactPosition, actualAddress: company.actualAddress, goodsOrigin: company.goodsOrigin };
+    } else {
+      s.company = company;
+    }
+    if (!s.status || s.status === "draft") s.status = "draft";
+    return partnerView(s);
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  res.json(out);
+});
+
+/** Принятие условий: сохраняем всё, чем позже доказывается факт договора. */
+app.post("/api/partner/terms", auth, sellerSelf, async (req, res) => {
+  if (req.body?.accepted !== true)
+    return res.status(400).json({ error: "Lai turpinātu, ir jāapstiprina noteikumi" });
+
+  const sellers = await loadSellers();
+  const seller = sellers.find((x) => x.id === req.actor.id);
+  if (!seller) return res.status(404).json({ error: "not found" });
+  if (!companyReady(seller)) return res.status(400).json({ error: "Vispirms aizpildiet uzņēmuma datus" });
+  if (seller.terms?.acceptedAt) return res.json(partnerView(seller));
+
+  const record = legal.acceptanceRecord({
+    req,
+    seller,
+    representative: {
+      name: String(req.body?.representative?.name || seller.company?.contactPerson || "").slice(0, 120),
+      email: String(req.body?.representative?.email || seller.company?.email || "").slice(0, 120),
+      position: String(req.body?.representative?.position || seller.company?.contactPosition || "").slice(0, 120),
+    },
+  });
+
+  const out = await updateJson(SELLERS, [], (list) => {
+    const s = list.find((x) => x.id === req.actor.id);
+    if (!s || s.terms?.acceptedAt) return s ? partnerView(s) : null;
+    s.terms = record;
+    s.status = "onboarding";
+    return partnerView(s);
+  });
+  res.json(out);
+  sendTermsCopy(seller, record).catch((e) => console.warn("[sofa] копия договора:", String(e.message || e)));
+});
+
+/** PDF с принятыми условиями — партнёру и в архив площадки. */
+async function termsPdf(sellerId) {
+  const s = (await loadSellers()).find((x) => x.id === sellerId);
+  if (!s?.terms?.acceptedAt) throw new Error("noteikumi nav apstiprināti");
+  return { seller: s, pdf: await legal.acceptancePdf({ acceptance: s.terms, seller: s }) };
+}
+
+app.get("/api/partner/terms.pdf", auth, sellerSelf, async (req, res) => {
+  try {
+    const { pdf } = await termsPdf(req.actor.id);
+    res.type("application/pdf").set("Content-Disposition", 'attachment; filename="sofa-lv-partneru-noteikumi.pdf"').send(pdf);
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
+});
+app.get("/api/admin/sellers/:id/terms.pdf", auth, adminOnly, async (req, res) => {
+  try {
+    const { pdf } = await termsPdf(req.params.id);
+    res.type("application/pdf").send(pdf);
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/** Письмо партнёру с копией принятых условий. */
+async function sendTermsCopy(seller, record) {
+  const to = record.representativeEmail || seller.company?.email;
+  const resend = process.env.RESEND_API_KEY;
+  const body = [
+    "Jūs esat apstiprinājis SOFA.LV Partneru sadarbības noteikumus.",
+    `Līguma versija: ${record.termsVersion}`,
+    `Apstiprināšanas datums un laiks: ${new Date(record.acceptedAt).toLocaleString("lv-LV", { timeZone: "Europe/Riga" })}`,
+    `Partneris: ${record.companyName}, reģ. Nr. ${record.registrationNumber}`,
+    `SIA "RANČO GOBAS": ${legal.PLATFORM.regNr}`,
+    `Dokumenta SHA-256: ${record.termsSha256}`,
+    "Pielikumā: PDF kopija ar apstiprinātajiem noteikumiem.",
+  ].join("\n");
+  if (!resend || !to) {
+    console.log(`[sofa] копия договора для ${to || seller.id} (почта не настроена):\n${body}`);
+    return;
+  }
+  const pdf = await legal.acceptancePdf({ acceptance: record, seller });
+  await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
+    body: JSON.stringify({
+      from: process.env.ORDER_FROM || "info@sofa.lv",
+      to,
+      subject: "SOFA.LV — apstiprinātie sadarbības noteikumi",
+      text: body,
+      attachments: [{ filename: "sofa-lv-partneru-noteikumi.pdf", content: pdf.toString("base64") }],
+    }),
+  });
+}
+
+/* ── Stripe Connect в кабинете партнёра ── */
+
+/** Создаёт при необходимости connected account и выдаёт ссылку онбординга. */
+app.post("/api/partner/stripe/link", auth, sellerSelf, async (req, res) => {
+  try {
+    const sellers = await loadSellers();
+    const seller = sellers.find((x) => x.id === req.actor.id);
+    if (!seller) return res.status(404).json({ error: "not found" });
+    if (!seller.terms?.acceptedAt)
+      return res.status(400).json({ error: "Vispirms apstipriniet sadarbības noteikumus" });
+
+    let accountId = seller.stripe?.accountId;
+    let degraded = "";
+    if (!accountId) {
+      const acct = await connect.createAccount(seller, { site: BASE_URL });
+      accountId = acct.id;
+      degraded = acct.__degraded || "";
+      await updateJson(SELLERS, [], (list) => {
+        const s = list.find((x) => x.id === seller.id);
+        if (s) s.stripe = { ...connect.accountState(acct), degraded };
+      });
+      if (degraded) console.warn("[sofa] Stripe Connect без контроля выплат:", degraded);
+    }
+    const link = await connect.accountLink(accountId, {
+      refreshUrl: `${BASE_URL}/#/admin?stripe=refresh`,
+      returnUrl: `${BASE_URL}/#/admin?stripe=done`,
+    });
+    res.json({ url: link.url, expiresAt: link.expires_at, accountId, degraded });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/** Свежий статус аккаунта из Stripe. */
+async function syncSeller(sellerId) {
+  const sellers = await loadSellers();
+  const seller = sellers.find((x) => x.id === sellerId);
+  if (!seller?.stripe?.accountId) return null;
+  const acct = await connect.getAccount(seller.stripe.accountId);
+  return updateJson(SELLERS, [], (list) => {
+    const s = list.find((x) => x.id === sellerId);
+    if (!s) return null;
+    s.stripe = { ...s.stripe, ...connect.accountState(acct) };
+    /* Партнёр завершил онбординг — отправляем на проверку площадке */
+    if (s.status === "onboarding" && stripeReady(s)) s.status = "review";
+    return partnerView(s);
+  });
+}
+
+app.post("/api/partner/stripe/sync", auth, sellerSelf, async (req, res) => {
+  try {
+    const out = await syncSeller(req.actor.id);
+    res.json(out || { error: "nav Stripe konta" });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/** Вход в панель Stripe партнёра (выплаты, документы, споры). */
+app.get("/api/partner/stripe/dashboard", auth, sellerSelf, async (req, res) => {
+  try {
+    const s = (await loadSellers()).find((x) => x.id === req.actor.id);
+    if (!s?.stripe?.accountId) return res.status(400).json({ error: "nav Stripe konta" });
+    const link = await connect.loginLink(s.stripe.accountId);
+    res.json({ url: link.url });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/* ── деньги партнёра: удержано / доступно / выплачено ── */
+
+/** Разбор всех заказов продавца по состоянию выплаты. */
+async function payoutSummary(sellerId) {
+  const orders = (await readJson(ORDERS, [])).filter((o) => o.sellerId === sellerId);
+  const buckets = { held: 0, available: 0, paid: 0, pending: 0, refunded: 0, disputed: 0 };
+  const rows = orders.map((o) => {
+    const state = payoutState(o);
+    const net = o.partnerNetCents || 0;
+    if (buckets[state] !== undefined) buckets[state] += net;
+    return {
+      order: o.order,
+      at: o.at,
+      status: o.status,
+      state,
+      deliveredAt: o.deliveredAt || null,
+      releaseAt: releaseDate(o.deliveredAt),
+      payoutAt: o.payoutAt || null,
+      grossCents: o.chargeCents || 0,
+      commissionCents: o.commissionCents || 0,
+      feeCents: o.applicationFeeCents || 0,
+      stripeFeeCents: o.stripeFeeCents || o.stripeFeeEstimateCents || 0,
+      netCents: net,
+      items: (o.items || []).map((i) => ({ n: i.n, title: i.title, img: i.img, price: i.price })),
+    };
+  });
+  return { buckets, rows };
+}
+
+app.get("/api/partner/payouts", auth, sellerSelf, async (req, res) => {
+  const s = (await loadSellers()).find((x) => x.id === req.actor.id);
+  const { buckets, rows } = await payoutSummary(req.actor.id);
+  let balance = null;
+  if (s?.stripe?.accountId && connect.hasStripe()) {
+    try {
+      const b = await connect.balance(s.stripe.accountId);
+      balance = { available: connect.availableCents(b), pending: connect.pendingCents(b) };
+    } catch (e) {
+      balance = { error: String(e.message || e) };
+    }
+  }
+  res.json({ holdDays: HOLD_DAYS, buckets, rows, balance });
 });
 
 app.delete("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
@@ -584,12 +1150,49 @@ app.delete("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
 
 /* Ручная отметка статуса заказа из админки */
 app.post("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
-  const list = await readJson(ORDERS, []);
-  const idx = list.findIndex((o) => o.order === req.params.num);
-  if (idx < 0) return res.status(404).json({ error: "not found" });
-  list[idx].status = String(req.body?.status || list[idx].status);
-  await writeJson(ORDERS, list);
-  res.json(list[idx]);
+  const out = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.order === req.params.num);
+    if (!o) return null;
+    if (req.body?.status) o.status = String(req.body.status);
+    /* Передача товара покупателю запускает отсчёт 14 дней до выплаты */
+    if (req.body?.delivered === true) o.deliveredAt = o.deliveredAt || new Date().toISOString();
+    if (req.body?.delivered === false) delete o.deliveredAt;
+    return { ...o, releaseAt: releaseDate(o.deliveredAt), payoutState: payoutState(o) };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  res.json(out);
+});
+
+/** Возврат покупателю. При товаре партнёра возвращаем и свою комиссию. */
+app.post("/api/admin/orders/:num/refund", auth, adminOnly, async (req, res) => {
+  try {
+    const order = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
+    if (!order) return res.status(404).json({ error: "not found" });
+    if (!order.charge && !order.paymentIntent)
+      return res.status(400).json({ error: "Šis pasūtījums nav apmaksāts caur Stripe" });
+
+    const amountCents = req.body?.amountCents ? Math.round(Number(req.body.amountCents)) : undefined;
+    const r = await connect.refund({
+      charge: order.charge || undefined,
+      paymentIntent: order.paymentIntent || undefined,
+      amountCents,
+      account: order.stripeAccountId || null,
+      refundApplicationFee: req.body?.refundFee !== false,
+      reason: req.body?.reason,
+    });
+    const out = await updateJson(ORDERS, [], (list) => {
+      const o = list.find((x) => x.order === req.params.num);
+      if (!o) return null;
+      o.refundedCents = (o.refundedCents || 0) + (r.amount || 0);
+      o.refundedAt = new Date().toISOString();
+      o.refundId = r.id;
+      if (o.refundedCents >= (o.chargeCents || 0)) o.status = "cancelled";
+      return { ...o };
+    });
+    res.json({ refund: { id: r.id, amount: r.amount, status: r.status }, order: out });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
 });
 
 app.post("/api/admin/login", async (req, res) => {
@@ -626,8 +1229,138 @@ app.get("/api/admin/sellers", auth, adminOnly, async (_req, res) => {
       active: s.active !== false,
       createdAt: s.createdAt,
       products: products.filter((p) => p.sellerId === s.id).length,
+      stage: partnerStage(s),
+      status: s.status || "draft",
+      canSell: canSell(s),
+      company: s.company || null,
+      terms: s.terms
+        ? { version: s.terms.termsVersion, acceptedAt: s.terms.acceptedAt, sha256: s.terms.termsSha256, ip: s.terms.acceptedIp, representative: s.terms.representativeName }
+        : null,
+      stripe: s.stripe || null,
     }))
   );
+});
+
+/** Проверка площадкой: допустить к торговле или приостановить. */
+app.post("/api/admin/sellers/:id/status", auth, adminOnly, async (req, res) => {
+  const want = String(req.body?.status || "");
+  if (!["active", "suspended", "review", "onboarding"].includes(want))
+    return res.status(400).json({ error: "Неизвестный статус" });
+
+  const out = await updateJson(SELLERS, [], (list) => {
+    const s = list.find((x) => x.id === req.params.id);
+    if (!s) return null;
+    if (want === "active") {
+      if (!companyReady(s)) return { error: "Партнёр не заполнил реквизиты" };
+      if (!termsReady(s)) return { error: "Партнёр не принял условия" };
+      if (!stripeReady(s)) return { error: "Stripe ещё не подтвердил счёт партнёра" };
+      s.active = true;
+      s.approvedAt = new Date().toISOString();
+    }
+    if (want === "suspended") s.active = false;
+    else s.active = true;
+    s.status = want;
+    return { id: s.id, status: s.status, stage: partnerStage(s), canSell: canSell(s) };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  if (out.error) return res.status(400).json(out);
+  res.json(out);
+});
+
+/** Обновить состояние счёта партнёра из Stripe вручную. */
+app.post("/api/admin/sellers/:id/sync", auth, adminOnly, async (req, res) => {
+  try {
+    const out = await syncSeller(req.params.id);
+    res.json(out || { error: "у партнёра нет счёта Stripe" });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/* ── выплаты партнёрам ──
+   Деньги лежат на счёте партнёра в Stripe, но уходят на его банк только
+   по кнопке площадки — не раньше, чем истечёт право отказа покупателя. */
+app.get("/api/admin/payouts", auth, adminOnly, async (_req, res) => {
+  const sellers = (await loadSellers()).filter((s) => s.stripe?.accountId || s.company);
+  const rows = [];
+  for (const s of sellers) {
+    const { buckets, rows: orders } = await payoutSummary(s.id);
+    let balance = null;
+    if (s.stripe?.accountId && connect.hasStripe()) {
+      try {
+        const b = await connect.balance(s.stripe.accountId);
+        balance = { available: connect.availableCents(b), pending: connect.pendingCents(b) };
+      } catch (e) {
+        balance = { error: String(e.message || e) };
+      }
+    }
+    rows.push({
+      id: s.id,
+      name: s.company?.name || s.name,
+      iban: s.company?.iban || "",
+      stage: partnerStage(s),
+      accountId: s.stripe?.accountId || "",
+      payoutsEnabled: Boolean(s.stripe?.payoutsEnabled),
+      payoutInterval: s.stripe?.payoutInterval || "",
+      buckets,
+      balance,
+      orders: orders.filter((o) => o.state === "available" || o.state === "held" || o.state === "disputed"),
+    });
+  }
+  res.json({ holdDays: HOLD_DAYS, rows });
+});
+
+app.post("/api/admin/payouts/:id", auth, adminOnly, async (req, res) => {
+  try {
+    const seller = (await loadSellers()).find((x) => x.id === req.params.id);
+    if (!seller?.stripe?.accountId) return res.status(400).json({ error: "у партнёра нет счёта Stripe" });
+
+    const { rows } = await payoutSummary(seller.id);
+    const due = rows.filter((r) => r.state === "available");
+    const dueCents = due.reduce((s, r) => s + r.netCents, 0);
+    if (dueCents <= 0) return res.status(400).json({ error: "нечего выплачивать" });
+
+    const bal = await connect.balance(seller.stripe.accountId);
+    const available = connect.availableCents(bal);
+    const amount = Math.min(dueCents, available);
+    if (amount <= 0)
+      return res.status(400).json({
+        error: "средства ещё не доступны в Stripe",
+        due: dueCents,
+        available,
+        pending: connect.pendingCents(bal),
+      });
+
+    const payout = await connect.createPayout({
+      account: seller.stripe.accountId,
+      amountCents: amount,
+      description: `SOFA.LV ${due.map((r) => r.order).join(", ")}`.slice(0, 200),
+      metadata: { partner_id: seller.id, orders: due.map((r) => r.order).join(",").slice(0, 480) },
+      idempotencyKey: `payout_${seller.id}_${due.map((r) => r.order).join("_")}`.slice(0, 200),
+    });
+
+    const paidOrders = [];
+    let left = amount;
+    await updateJson(ORDERS, [], (list) => {
+      for (const r of due) {
+        if (left < r.netCents) break;
+        const o = list.find((x) => x.order === r.order);
+        if (!o) continue;
+        o.payoutAt = new Date().toISOString();
+        o.payoutId = payout.id;
+        o.payoutCents = r.netCents;
+        left -= r.netCents;
+        paidOrders.push(o.order);
+      }
+    });
+    res.json({
+      payout: { id: payout.id, amount: payout.amount, arrival: payout.arrival_date, status: payout.status },
+      orders: paidOrders,
+      partial: amount < dueCents,
+    });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
 });
 
 app.post("/api/admin/sellers", auth, adminOnly, async (req, res) => {
@@ -642,7 +1375,10 @@ app.post("/api/admin/sellers", auth, adminOnly, async (req, res) => {
     return res.status(400).json({ error: "Такой логин уже занят" });
   if (idx < 0 && !b.password) return res.status(400).json({ error: "Задайте пароль" });
 
-  const base = idx >= 0 ? list[idx] : { id: `s${Date.now().toString(36)}`, createdAt: new Date().toISOString() };
+  const base =
+    idx >= 0
+      ? list[idx]
+      : { id: `s${Date.now().toString(36)}`, createdAt: new Date().toISOString(), status: "draft" };
   const next = {
     ...base,
     login,
@@ -650,6 +1386,7 @@ app.post("/api/admin/sellers", auth, adminOnly, async (req, res) => {
     contact: String(b.contact || "").trim(),
     commission: Math.max(0, Math.min(90, Number(b.commission ?? COMMISSION))),
     active: b.active !== false,
+    status: base.status || "draft",
   };
   if (b.password) {
     next.salt = crypto.randomBytes(16).toString("hex");
@@ -685,8 +1422,12 @@ app.get("/api/admin/stats", auth, async (req, res) => {
     for (const o of orders) {
       const items = (o.items || []).filter((i) => i.sellerId === mine);
       if (!items.length) continue;
-      const sum = items.reduce((a, i) => a + (i.price || 0), 0);
-      const sp = split(sum, req.actor.commission);
+      const legacy = split(items.reduce((a, i) => a + (i.price || 0), 0), req.actor.commission);
+      const sum = o.itemsCents !== undefined ? toEur(o.itemsCents) : legacy.gross;
+      const sp = {
+        fee: o.commissionCents !== undefined ? toEur(o.commissionCents) : legacy.fee,
+        net: o.partnerNetCents !== undefined ? toEur(o.partnerNetCents) : legacy.net,
+      };
       if (done(o)) {
         gross += sum;
         fee += sp.fee;
@@ -695,6 +1436,8 @@ app.get("/api/admin/stats", auth, async (req, res) => {
         order: o.order,
         at: o.at,
         status: o.status || "new",
+        payoutState: payoutState(o),
+        releaseAt: releaseDate(o.deliveredAt),
         items: items.map((i) => ({ n: i.n, title: i.title, price: i.price, img: i.img })),
         gross: sum,
         fee: sp.fee,
@@ -776,6 +1519,13 @@ app.get("/api/admin/stats", auth, async (req, res) => {
       pending: Math.round(r.pending * 100) / 100,
     })),
   });
+});
+
+/* В панели виден весь каталог: публичная витрина прячет товары
+   непроверенных партнёров, но владельцу они нужны всегда. */
+app.get("/api/admin/products", auth, async (req, res) => {
+  const list = await loadProducts();
+  res.json(req.actor.role === "admin" ? list : list.filter((p) => p.sellerId === req.actor.id));
 });
 
 app.post("/api/admin/import", auth, adminOnly, async (req, res) => {
@@ -871,15 +1621,14 @@ app.get("/api/admin/orders", auth, async (req, res) => {
   const orders = await readJson(ORDERS, []);
   if (req.actor.role === "admin") return res.json(orders);
 
-  /* Продавцу — только заказы с его товарами и только его позиции и суммы */
+  /* Продавцу — только его заказы, с его же суммами и состоянием выплаты */
   const mine = req.actor.id;
   res.json(
     orders
+      .filter((o) => o.sellerId === mine || (o.items || []).some((i) => i.sellerId === mine))
       .map((o) => {
         const items = (o.items || []).filter((i) => i.sellerId === mine);
-        if (!items.length) return null;
-        const sum = items.reduce((a, i) => a + (i.price || 0), 0);
-        const sp = split(sum, req.actor.commission);
+        const legacy = split(items.reduce((a, i) => a + (i.price || 0), 0), req.actor.commission);
         return {
           order: o.order,
           at: o.at,
@@ -891,12 +1640,15 @@ app.get("/api/admin/orders", auth, async (req, res) => {
           email: o.email,
           comment: o.comment,
           items,
-          total: sp.gross,
-          fee: sp.fee,
-          net: sp.net,
+          deliveredAt: o.deliveredAt || null,
+          releaseAt: releaseDate(o.deliveredAt),
+          payoutState: payoutState(o),
+          total: o.itemsCents !== undefined ? toEur(o.itemsCents) : legacy.gross,
+          fee: o.commissionCents !== undefined ? toEur(o.commissionCents) : legacy.fee,
+          net: o.partnerNetCents !== undefined ? toEur(o.partnerNetCents) : legacy.net,
+          stripeFee: toEur(o.stripeFeeCents || o.stripeFeeEstimateCents || 0),
         };
       })
-      .filter(Boolean)
   );
 });
 

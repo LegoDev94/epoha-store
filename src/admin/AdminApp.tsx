@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Category, Lang, Lot } from "../data/catalog";
 import { Select } from "../ui/Select";
+import { AdminPartners, AdminPayouts, PartnerCabinet } from "./Marketplace";
 import "./admin.css";
 
 /* ═══ Панель маркетплейса VINTAGE MĒBELES ═══
@@ -53,6 +54,17 @@ interface OrderView {
   email?: string;
   comment?: string;
   items?: OrderItem[];
+  /* маркетплейс: продавец, выплата, платёж в Stripe */
+  sellerId?: string | null;
+  sellerName?: string;
+  stripeFee?: number;
+  deliveredAt?: string | null;
+  releaseAt?: string | null;
+  payoutState?: string;
+  payoutAt?: string | null;
+  refundedAt?: string | null;
+  charge?: string;
+  paymentIntent?: string;
 }
 interface Seller {
   id: string;
@@ -544,7 +556,8 @@ export default function AdminApp() {
   const [orders, setOrders] = useState<OrderView[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [tab, setTab] = useState<"goods" | "orders" | "sellers" | "stats">("goods");
+  const [tab, setTab] = useState<"goods" | "orders" | "sellers" | "stats" | "payouts" | "cabinet">("goods");
+  const [stage, setStage] = useState<string>("");
 
   const [edit, setEdit] = useState<Lot | null>(null);
   const [note, setNote] = useState("");
@@ -578,9 +591,10 @@ export default function AdminApp() {
       });
   }, [token, api]);
 
+  /* Панель показывает весь свой каталог, включая скрытые с витрины товары */
   const loadProducts = useCallback(() => {
-    fetch("api/products").then((r) => r.json()).then(setItems).catch(() => setItems([]));
-  }, []);
+    api("api/admin/products").then(setItems).catch(() => setItems([]));
+  }, [api]);
   const loadOrders = useCallback(() => {
     api("api/admin/orders").then(setOrders).catch(() => {});
   }, [api]);
@@ -597,7 +611,8 @@ export default function AdminApp() {
     loadOrders();
     loadStats();
     if (me.role === "admin") loadSellers();
-  }, [me, loadProducts, loadOrders, loadStats, loadSellers]);
+    else api("api/partner/me").then((p) => setStage(p.stage)).catch(() => {});
+  }, [me, api, loadProducts, loadOrders, loadStats, loadSellers]);
 
   const myItems = useMemo(
     () => (isAdmin ? items : items.filter((i) => (i as Lot & { sellerId?: string }).sellerId === me?.id)),
@@ -674,6 +689,29 @@ export default function AdminApp() {
       alert(String((e as Error).message));
     }
   };
+  const markDelivered = async (num: string, delivered: boolean) => {
+    try {
+      await api(`api/admin/orders/${num}`, { method: "POST", body: JSON.stringify({ delivered }) });
+      loadOrders();
+    } catch (e) {
+      alert(String((e as Error).message));
+    }
+  };
+
+  /* Возврат идёт через Stripe: у товара партнёра вместе с деньгами
+     покупателю возвращается и наша комиссия. */
+  const refundOrder = async (num: string, total?: number) => {
+    if (!confirm(`Вернуть покупателю ${money(total)} по заказу ${num}?`)) return;
+    try {
+      const r = await api(`api/admin/orders/${num}/refund`, { method: "POST", body: JSON.stringify({}) });
+      alert(`Возврат ${money((r.refund?.amount || 0) / 100)} — статус ${r.refund?.status}`);
+      loadOrders();
+      loadStats();
+    } catch (e) {
+      alert(String((e as Error).message));
+    }
+  };
+
   const setStatus = async (num: string, status: string) => {
     await api(`api/admin/orders/${num}`, { method: "POST", body: JSON.stringify({ status }) });
     loadOrders();
@@ -712,6 +750,16 @@ export default function AdminApp() {
           {isAdmin && (
             <button className={tab === "sellers" ? "on" : ""} onClick={() => setTab("sellers")}>
               Продавцы <i>{sellers.length}</i>
+            </button>
+          )}
+          {isAdmin && (
+            <button className={tab === "payouts" ? "on" : ""} onClick={() => setTab("payouts")}>
+              Выплаты
+            </button>
+          )}
+          {!isAdmin && (
+            <button className={tab === "cabinet" ? "on" : ""} onClick={() => setTab("cabinet")}>
+              Кабинет
             </button>
           )}
           <button className={tab === "stats" ? "on" : ""} onClick={() => setTab("stats")}>
@@ -770,6 +818,22 @@ export default function AdminApp() {
               </div>
               <button className="adm-btn" onClick={() => { setNote(""); setEdit(empty()); }}>
                 + Добавить товар
+              </button>
+            </section>
+          )}
+
+          {/* Пока подключение не завершено, товары партнёра на витрину не выходят */}
+          {!isAdmin && stage && stage !== "active" && (
+            <section className="adm-import mp-gate">
+              <div className="adm-import-main">
+                <b className="adm-sec-title">Preces vēl nav redzamas skatlogā</b>
+                <p className="adm-hint">
+                  Lai sāktu pārdot, pabeidziet pievienošanos: uzņēmuma dati → sadarbības noteikumi →
+                  Stripe konts → SOFA.LV pārbaude.
+                </p>
+              </div>
+              <button className="adm-btn" onClick={() => setTab("cabinet")}>
+                Turpināt pievienošanos →
               </button>
             </section>
           )}
@@ -962,6 +1026,16 @@ export default function AdminApp() {
                       <span>Ваши позиции <b>{money(o.total)}</b></span>
                       <span>Комиссия площадки <b>−{money(o.fee)}</b></span>
                       <span className="adm-ord-net">К выплате <b>{money(o.net)}</b></span>
+                      {o.payoutState && (
+                        <span className={`mp-badge mp-badge-${o.payoutState}`}>
+                          {o.payoutState === "held"
+                            ? `aizturēts${o.releaseAt ? " līdz " + new Date(o.releaseAt).toLocaleDateString("lv-LV") : ""}`
+                            : o.payoutState === "available" ? "gatavs izmaksai"
+                            : o.payoutState === "paid" ? "izmaksāts"
+                            : o.payoutState === "refunded" ? "atmaksāts"
+                            : o.payoutState === "disputed" ? "strīds" : "gaida apmaksu"}
+                        </span>
+                      )}
                     </div>
                   )}
 
@@ -976,6 +1050,21 @@ export default function AdminApp() {
                           {STATUS[st]}
                         </button>
                       ))}
+                      <button
+                        className={`adm-btn adm-btn-sm${o.deliveredAt ? "" : " adm-ghost"}`}
+                        title="С этого дня идёт отсчёт 14 дней до выплаты партнёру"
+                        onClick={() => markDelivered(o.order, !o.deliveredAt)}
+                      >
+                        {o.deliveredAt
+                          ? `Передан ${new Date(o.deliveredAt).toLocaleDateString("ru-RU")}`
+                          : "Передан покупателю"}
+                      </button>
+                      {(o.charge || o.paymentIntent) && !o.refundedAt && (
+                        <button className="adm-btn adm-btn-sm adm-ghost" onClick={() => refundOrder(o.order, o.total)}>
+                          Вернуть деньги
+                        </button>
+                      )}
+                      {o.refundedAt && <span className="adm-badge adm-st-cancelled">возврат оформлен</span>}
                       <button className="adm-btn adm-btn-sm adm-danger" onClick={() => removeOrder(o.order)}>Удалить</button>
                     </footer>
                   )}
@@ -999,18 +1088,18 @@ export default function AdminApp() {
             <button className="adm-btn" onClick={() => setSellerEdit({})}>+ Добавить продавца</button>
           </section>
 
+          <AdminPartners api={api} onChanged={() => { loadSellers(); loadStats(); }} />
+
           <div className="adm-list">
-            {sellers.length === 0 && <p className="adm-empty">Продавцов пока нет.</p>}
             {sellers.map((s) => (
               <article className="adm-card adm-seller" key={s.id}>
                 <div className="adm-card-main">
                   <b>{s.name} {!s.active && <span className="adm-sold">доступ выключен</span>}</b>
                   <span>логин: {s.login} · комиссия {s.commission}% · товаров: {s.products ?? 0}</span>
-                  {s.contact && <span>{s.contact}</span>}
                 </div>
                 <div className="adm-card-right">
                   <div>
-                    <button className="adm-btn adm-btn-sm" onClick={() => setSellerEdit(s)}>Изменить</button>
+                    <button className="adm-btn adm-btn-sm" onClick={() => setSellerEdit(s)}>Доступ</button>
                     <button className="adm-btn adm-btn-sm adm-danger" onClick={() => removeSeller(s)}>Удалить</button>
                   </div>
                 </div>
@@ -1018,6 +1107,11 @@ export default function AdminApp() {
             ))}
           </div>
         </>
+      )}
+
+      {tab === "payouts" && isAdmin && <AdminPayouts api={api} />}
+      {tab === "cabinet" && !isAdmin && (
+        <PartnerCabinet api={api} onChanged={() => { loadProducts(); loadStats(); }} />
       )}
 
       {tab === "stats" && stats && (
