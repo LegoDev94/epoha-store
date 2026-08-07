@@ -436,7 +436,14 @@ const pickSource = (tr) => ["lv", "en", "ru"].find((l) => (tr?.[l]?.title || "")
 /* ── сервер ── */
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json({ limit: "1mb" }));
+/* Вебхуки Stripe подписывают СЫРОЕ тело запроса. Если его разберёт
+   express.json(), до проверки подписи дойдёт уже объект, и всякая
+   доставка будет отвергнута. Поэтому для этих адресов json не включаем. */
+const WEBHOOK_PATHS = ["/api/stripe/webhook", "/api/stripe/webhook/connect"];
+const jsonBody = express.json({ limit: "1mb" });
+app.use((req, res, next) =>
+  WEBHOOK_PATHS.includes(req.path) ? next() : jsonBody(req, res, next)
+);
 
 const upload = multer({
   storage: multer.diskStorage({
