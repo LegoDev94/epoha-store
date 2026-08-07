@@ -126,6 +126,11 @@ const empty = (): Lot => ({
 });
 
 function useApi(token: string, onExpired?: () => void) {
+  /* Колбэк держим в ссылке: иначе он пересоздаётся на каждом рендере,
+     меняет api → меняет загрузчики → эффект загрузки бьёт по кругу. */
+  const expired = useRef(onExpired);
+  expired.current = onExpired;
+
   return useCallback(
     async (url: string, opts: RequestInit = {}) => {
       const res = await fetch(url, {
@@ -138,13 +143,13 @@ function useApi(token: string, onExpired?: () => void) {
       });
       /* Истёкший вход выглядел бы как «данных нет» — гасим сразу */
       if (res.status === 401) {
-        onExpired?.();
+        expired.current?.();
         throw new Error("Сессия истекла — войдите заново");
       }
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       return res.json();
     },
-    [token, onExpired]
+    [token]
   );
 }
 
