@@ -198,27 +198,25 @@ export const Hint = ({ text }: { text: string }) => (
 /* ── мелкие помощники ──────────────────────────────────────────── */
 
 /**
- * Скачивание файла из панели. Обычная ссылка не годится: сервер ждёт
- * токен в заголовке, а браузер его не пошлёт — вернётся 401.
+ * Скачивание файла из панели.
+ *
+ * Обычная ссылка не годится — сервер ждёт токен в заголовке. Приём с
+ * blob-ссылкой тоже подводит: браузер отменяет запись на диск, а на iOS
+ * часто не скачивает вовсе. Поэтому просим у сервера одноразовый ключ на
+ * минуту и открываем обычную ссылку — дальше браузер делает всё сам.
  */
-export async function download(url: string, filename: string) {
-  const res = await fetch(url, { headers: { "x-token": localStorage.getItem("epoha-token") || "" } });
+export async function download(path: string, _filename?: string) {
+  const res = await fetch("api/admin/download-token", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "x-token": localStorage.getItem("epoha-token") || "" },
+    body: JSON.stringify({ path: path.startsWith("/") ? path : "/" + path }),
+  });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `HTTP ${res.status}`);
   }
-  const blob = await res.blob();
-  const href = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = href;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  /* Ссылку освобождаем не сразу: браузер ещё пишет файл на диск, и
-     ранний revoke отменяет скачивание на полпути. */
-  setTimeout(() => URL.revokeObjectURL(href), 60000);
-  addEventListener("pagehide", () => URL.revokeObjectURL(href), { once: true });
+  const { token } = await res.json();
+  location.href = `${path}?dl=${encodeURIComponent(token)}`;
 }
 
 export const copy = async (text: string) => {

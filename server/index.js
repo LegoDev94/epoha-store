@@ -118,6 +118,32 @@ const readToken = (token) => {
   }
 };
 
+/* Скачивание файлов идёт обычной ссылкой: blob в браузере ненадёжен,
+   на iOS часто не срабатывает вовсе. Поэтому — одноразовый ключ на
+   минуту, привязанный к конкретному адресу. */
+const makeDownloadToken = (path, actor) => {
+  const payload = Buffer.from(
+    JSON.stringify({ p: path, r: actor.role, i: actor.id, e: Date.now() + 60000 })
+  ).toString("base64url");
+  const sig = crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+};
+
+const readDownloadToken = (token, path) => {
+  const [payload, sig] = String(token || "").split(".");
+  if (!payload || !sig) return null;
+  const expect = crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
+  if (sig.length !== expect.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
+  try {
+    const d = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (d.p !== path || Date.now() > d.e) return null;
+    return { role: d.r, id: d.i, name: d.r === "admin" ? "Администратор" : "" };
+  } catch {
+    return null;
+  }
+};
+
 const auth = async (req, res, next) => {
   const data = readToken(req.get("x-token"));
   if (!data) return res.status(401).json({ error: "unauthorized" });
@@ -135,6 +161,16 @@ const auth = async (req, res, next) => {
   };
   next();
 };
+/** Пропускает как обычный вход, так и одноразовый ключ из адреса. */
+const authDownload = (req, res, next) => {
+  const viaLink = readDownloadToken(req.query.dl, req.path);
+  if (viaLink) {
+    req.actor = { ...viaLink, commission: COMMISSION() };
+    return next();
+  }
+  return auth(req, res, next);
+};
+
 const adminOnly = (req, res, next) =>
   req.actor?.role === "admin" ? next() : res.status(403).json({ error: "forbidden" });
 
@@ -1060,7 +1096,7 @@ async function termsPdf(sellerId) {
   return { seller: s, pdf: await legal.acceptancePdf({ acceptance: s.terms, seller: s }) };
 }
 
-app.get("/api/partner/terms.pdf", auth, sellerSelf, async (req, res) => {
+app.get("/api/partner/terms.pdf", authDownload, sellerSelf, async (req, res) => {
   try {
     const { pdf } = await termsPdf(req.actor.id);
     res.type("application/pdf").set("Content-Disposition", 'attachment; filename="sofa-lv-partneru-noteikumi.pdf"').send(pdf);
@@ -1068,7 +1104,7 @@ app.get("/api/partner/terms.pdf", auth, sellerSelf, async (req, res) => {
     res.status(400).json({ error: String(e.message || e) });
   }
 });
-app.get("/api/admin/sellers/:id/terms.pdf", auth, adminOnly, async (req, res) => {
+app.get("/api/admin/sellers/:id/terms.pdf", authDownload, adminOnly, async (req, res) => {
   try {
     const { pdf } = await termsPdf(req.params.id);
     res.type("application/pdf").send(pdf);
@@ -1349,6 +1385,21 @@ app.post("/api/admin/settings/test-notify", auth, adminOnly, async (req, res) =>
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
+});
+
+/** Ключ на скачивание конкретного файла. */
+app.post("/api/admin/download-token", auth, (req, res) => {
+  const path_ = String(req.body?.path || "");
+  const allowed = [
+    "/api/admin/export/orders.csv",
+    "/api/partner/terms.pdf",
+    /^\/api\/admin\/sellers\/[\w-]+\/terms\.pdf$/,
+  ];
+  const okPath = allowed.some((a) => (a instanceof RegExp ? a.test(path_) : a === path_));
+  if (!okPath) return res.status(400).json({ error: "Этот файл так не скачивается" });
+  if (path_.startsWith("/api/admin/") && req.actor.role !== "admin")
+    return res.status(403).json({ error: "forbidden" });
+  res.json({ token: makeDownloadToken(path_, req.actor) });
 });
 
 app.get("/api/admin/audit", auth, adminOnly, async (req, res) =>
@@ -1961,7 +2012,7 @@ const csvCell = (v) => {
   return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
 };
 
-app.get("/api/admin/export/orders.csv", auth, adminOnly, async (req, res) => {
+app.get("/api/admin/export/orders.csv", authDownload, adminOnly, async (req, res) => {
   const [orders, sellers] = await Promise.all([readJson(ORDERS, []), loadSellers()]);
   const from = req.query.from ? Date.parse(String(req.query.from)) : 0;
   const to = req.query.to ? Date.parse(String(req.query.to)) + 864e5 : Infinity;
