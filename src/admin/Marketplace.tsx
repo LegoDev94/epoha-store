@@ -281,6 +281,7 @@ function StripeStep({ me, t, api, onSync }: { me: Partner; t: T; api: Api; onSyn
       setBusy(false);
     }
   };
+  const degraded = me.stripe?.degraded;
 
   return (
     <div className="mp-card">
@@ -299,6 +300,7 @@ function StripeStep({ me, t, api, onSync }: { me: Partner; t: T; api: Api; onSyn
         </div>
       )}
       {err && <p className="adm-err">{err}</p>}
+      {degraded && <p className="adm-err">{degraded}</p>}
       <div className="mp-btns">
         <button className="adm-btn" onClick={start} disabled={busy}>
           {busy ? "…" : me.stripe?.accountId ? t("partner.status.stripeRequired.action") : t("partner.stripe.button")}

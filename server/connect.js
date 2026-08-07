@@ -103,23 +103,32 @@ export const accountPayload = (seller, { site }) => ({
   metadata: { partner_id: seller.id, platform: "sofa.lv" },
 });
 
-export async function createAccount(seller, opts) {
-  try {
-    return await call("/accounts", { method: "POST", data: accountPayload(seller, opts) });
-  } catch (e) {
-    /* Если площадка ещё не приняла ответственность за убытки в панели Stripe,
-       создаём аккаунт в базовой конфигурации — но тогда график выплат
-       остаётся за Stripe, о чём предупреждаем администратора. */
-    if (e instanceof StripeError && /losses|responsib|platform.profile/i.test(e.message || "")) {
-      const fallback = accountPayload(seller, opts);
-      delete fallback.controller.losses;
-      delete fallback.settings.payouts.schedule;
-      const acct = await call("/accounts", { method: "POST", data: fallback });
-      acct.__degraded = e.message;
-      return acct;
-    }
-    throw e;
-  }
+export const createAccount = (seller, opts) =>
+  call("/accounts", { method: "POST", data: accountPayload(seller, opts) });
+
+/**
+ * Понятное объяснение вместо служебного текста Stripe.
+ * Профиль площадки в Connect заполняется владельцем один раз, руками.
+ */
+export function explain(e) {
+  const m = String(e?.message || e || "");
+  if (/complete your platform profile|questionnaire/i.test(m))
+    return {
+      partner: "Maksājumu pieslēgšana pagaidām nav pieejama. SOFA.LV pabeidz Stripe Connect aktivizāciju — mēs sazināsimies ar Jums, tiklīdz varēs turpināt.",
+      admin:
+        "Stripe ещё не активировал Connect для площадки: заполните анкету платформы в дашборде " +
+        "(dashboard.stripe.com/connect/accounts/overview) и подтвердите ответственность за споры " +
+        "в настройках профиля платформы. Без этого счета партнёров не создаются.",
+    };
+  if (/must control losses|liable for negative balances/i.test(m))
+    return {
+      partner: "Maksājumu pieslēgšana pagaidām nav pieejama. Lūdzu, sazinieties ar SOFA.LV.",
+      admin:
+        "В профиле платформы Stripe не принята ответственность за отрицательные балансы и споры. " +
+        "Примите её на dashboard.stripe.com/settings/connect/platform_profile — иначе Stripe не даёт " +
+        "площадке управлять выплатами партнёров.",
+    };
+  return { partner: m, admin: m };
 }
 
 export const getAccount = (id) => call(`/accounts/${id}`);

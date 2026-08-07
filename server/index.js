@@ -1040,24 +1040,24 @@ app.post("/api/partner/stripe/link", auth, sellerSelf, async (req, res) => {
       return res.status(400).json({ error: "Vispirms apstipriniet sadarbības noteikumus" });
 
     let accountId = seller.stripe?.accountId;
-    let degraded = "";
     if (!accountId) {
       const acct = await connect.createAccount(seller, { site: BASE_URL });
       accountId = acct.id;
-      degraded = acct.__degraded || "";
       await updateJson(SELLERS, [], (list) => {
         const s = list.find((x) => x.id === seller.id);
-        if (s) s.stripe = { ...connect.accountState(acct), degraded };
+        if (s) s.stripe = connect.accountState(acct);
       });
-      if (degraded) console.warn("[sofa] Stripe Connect без контроля выплат:", degraded);
     }
     const link = await connect.accountLink(accountId, {
       refreshUrl: `${BASE_URL}/#/admin?stripe=refresh`,
       returnUrl: `${BASE_URL}/#/admin?stripe=done`,
     });
-    res.json({ url: link.url, expiresAt: link.expires_at, accountId, degraded });
+    res.json({ url: link.url, expiresAt: link.expires_at, accountId });
   } catch (e) {
-    res.status(400).json({ error: String(e.message || e) });
+    /* Партнёру — человеческое объяснение, в журнал — что делать владельцу */
+    const said = connect.explain(e);
+    if (said.admin !== said.partner) console.warn("[sofa] Stripe Connect:", said.admin);
+    res.status(400).json({ error: said.partner, admin: said.admin });
   }
 });
 
