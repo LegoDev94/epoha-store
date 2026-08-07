@@ -1594,6 +1594,29 @@ app.post("/api/admin/sellers/:id/status", auth, adminOnly, async (req, res) => {
   res.json(out);
 });
 
+/** Привязать партнёру готовый счёт Stripe. Только в песочнице:
+    на бою счёт создаёт сам партнёр, проходя проверку Stripe. */
+app.post("/api/admin/sellers/attach-test-account", auth, adminOnly, async (req, res) => {
+  if (!settings.isTest())
+    return res.status(400).json({ error: "Доступно только в режиме песочницы" });
+  const accountId = String(req.body?.accountId || "");
+  if (!/^acct_/.test(accountId)) return res.status(400).json({ error: "Нужен id счёта acct_…" });
+  try {
+    const acct = await connect.getAccount(accountId);
+    const out = await updateJson(SELLERS, [], (list) => {
+      const s = list.find((x) => x.id === req.body?.sellerId);
+      if (!s) return null;
+      s.stripe = { ...connect.accountState(acct), mode: "test" };
+      return partnerView(s);
+    });
+    if (!out) return res.status(404).json({ error: "Партнёр не найден" });
+    logAction(req, "seller.attachTestAccount", `seller:${req.body?.sellerId}`, undefined, accountId);
+    res.json(out);
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
 /** Обновить состояние счёта партнёра из Stripe вручную. */
 app.post("/api/admin/sellers/:id/sync", auth, adminOnly, async (req, res) => {
   try {
