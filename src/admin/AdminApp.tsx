@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Category, Lang, Lot } from "../data/catalog";
+import { Select } from "../ui/Select";
 import "./admin.css";
 
 /* ═══ Панель маркетплейса VINTAGE MĒBELES ═══
@@ -310,11 +311,12 @@ function Editor({
             </label>
             <label className="adm-f">
               <span>Категория</span>
-              <select value={p.cat} onChange={(e) => setP({ ...p, cat: e.target.value as Category })}>
-                {CATS.map((c) => (
-                  <option key={c.v} value={c.v}>{c.l}</option>
-                ))}
-              </select>
+              <Select
+                className="sel-sq sel-full"
+                value={p.cat}
+                onChange={(v) => setP({ ...p, cat: v as Category })}
+                options={CATS.map((c) => ({ value: c.v, label: c.l }))}
+              />
             </label>
             <label className="adm-f adm-check">
               <input type="checkbox" checked={!!p.sold} onChange={(e) => setP({ ...p, sold: e.target.checked })} />
@@ -774,23 +776,35 @@ export default function AdminApp() {
 
           <div className="adm-filters">
             <input className="adm-fl-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по названию или номеру" />
-            <select value={fCat} onChange={(e) => setFCat(e.target.value)}>
-              <option value="all">Все категории</option>
-              {CATS.map((c) => <option key={c.v} value={c.v}>{c.l}</option>)}
-            </select>
+            <Select
+              className="sel-sq"
+              value={fCat}
+              onChange={setFCat}
+              options={[{ value: "all", label: "Все категории" }, ...CATS.map((c) => ({ value: c.v, label: c.l }))]}
+            />
             {isAdmin && (
-              <select value={fSeller} onChange={(e) => setFSeller(e.target.value)}>
-                <option value="all">Все продавцы</option>
-                <option value="shop">Витрина магазина</option>
-                {sellers.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
-              </select>
+              <Select
+                className="sel-sq"
+                value={fSeller}
+                onChange={setFSeller}
+                options={[
+                  { value: "all", label: "Все продавцы" },
+                  { value: "shop", label: "Витрина магазина" },
+                  ...sellers.map((s) => ({ value: s.id, label: s.name })),
+                ]}
+              />
             )}
-            <select value={fSort} onChange={(e) => setFSort(e.target.value)}>
-              <option value="new">Сначала новые</option>
-              <option value="old">Сначала старые</option>
-              <option value="cheap">Дешевле</option>
-              <option value="rich">Дороже</option>
-            </select>
+            <Select
+              className="sel-sq"
+              value={fSort}
+              onChange={setFSort}
+              options={[
+                { value: "new", label: "Сначала новые" },
+                { value: "old", label: "Сначала старые" },
+                { value: "cheap", label: "Дешевле" },
+                { value: "rich", label: "Дороже" },
+              ]}
+            />
             <div className="adm-fl-range">
               <input type="number" value={fMin} onChange={(e) => setFMin(e.target.value)} placeholder="€ от" />
               <input type="number" value={fMax} onChange={(e) => setFMax(e.target.value)} placeholder="€ до" />
@@ -851,24 +865,39 @@ export default function AdminApp() {
         <>
           <div className="adm-filters">
             <input className="adm-fl-search" value={oq} onChange={(e) => setOq(e.target.value)} placeholder="Поиск: номер, имя, почта, телефон, адрес" />
-            <select value={oStatus} onChange={(e) => setOStatus(e.target.value)}>
-              <option value="all">Любой статус</option>
-              <option value="new">Новые</option>
-              <option value="paid">Оплаченные</option>
-              <option value="done">Выполненные</option>
-              <option value="cancelled">Отменённые</option>
-            </select>
-            <select value={oDelivery} onChange={(e) => setODelivery(e.target.value)}>
-              <option value="all">Любое получение</option>
-              <option value="pickup">Самовывоз</option>
-              <option value="courier">Доставка</option>
-            </select>
-            <select value={oSort} onChange={(e) => setOSort(e.target.value)}>
-              <option value="new">Сначала новые</option>
-              <option value="old">Сначала старые</option>
-              <option value="big">Сумма больше</option>
-              <option value="small">Сумма меньше</option>
-            </select>
+            <Select
+              className="sel-sq"
+              value={oStatus}
+              onChange={setOStatus}
+              options={[
+                { value: "all", label: "Любой статус" },
+                { value: "new", label: "Новые" },
+                { value: "paid", label: "Оплаченные" },
+                { value: "done", label: "Выполненные" },
+                { value: "cancelled", label: "Отменённые" },
+              ]}
+            />
+            <Select
+              className="sel-sq"
+              value={oDelivery}
+              onChange={setODelivery}
+              options={[
+                { value: "all", label: "Любое получение" },
+                { value: "pickup", label: "Самовывоз" },
+                { value: "courier", label: "Доставка" },
+              ]}
+            />
+            <Select
+              className="sel-sq"
+              value={oSort}
+              onChange={setOSort}
+              options={[
+                { value: "new", label: "Сначала новые" },
+                { value: "old", label: "Сначала старые" },
+                { value: "big", label: "Сумма больше" },
+                { value: "small", label: "Сумма меньше" },
+              ]}
+            />
             <div className="adm-fl-range">
               <input type="number" value={oMin} onChange={(e) => setOMin(e.target.value)} placeholder="€ от" />
               <input type="number" value={oMax} onChange={(e) => setOMax(e.target.value)} placeholder="€ до" />

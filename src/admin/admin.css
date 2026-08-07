@@ -493,7 +493,9 @@
 .adm-fl-reset:hover { background: rgba(122, 97, 54, 0.12); }
 @media (max-width: 620px) {
   .adm-fl-search { min-width: 100%; }
-  .adm-filters select { flex: 1; min-width: 140px; }
+  .adm-filters select,
+  .adm-filters .sel { flex: 1; min-width: 140px; }
+  .adm-filters .sel .sel-btn { width: 100%; }
 }
 
 /* ── Маркетплейс: роли, продавцы, статистика ─────────────────── */

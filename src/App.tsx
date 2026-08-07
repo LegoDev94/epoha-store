@@ -8,6 +8,7 @@ import {
 } from "./data/catalog";
 import { LANGS, detectLang, localeOf, makeT, type T } from "./i18n";
 import { Logo } from "./Logo";
+import { Select } from "./ui/Select";
 
 const AdminApp = lazy(() => import("./admin/AdminApp"));
 
@@ -616,11 +617,16 @@ function Home({
             title={t("cat." + cat)}
             count={shown.length}
             right={
-              <select className="sort" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort">
-                <option value="new">{t("sort.new")}</option>
-                <option value="cheap">{t("sort.cheap")}</option>
-                <option value="rich">{t("sort.rich")}</option>
-              </select>
+              <Select
+                value={sort}
+                onChange={setSort}
+                label={t("sort.new")}
+                options={[
+                  { value: "new", label: t("sort.new") },
+                  { value: "cheap", label: t("sort.cheap") },
+                  { value: "rich", label: t("sort.rich") },
+                ]}
+              />
             }
           />
 

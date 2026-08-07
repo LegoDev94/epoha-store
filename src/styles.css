@@ -313,19 +313,6 @@ html::-webkit-scrollbar-thumb {
 .bn-facts b { color: #e2c78a; font-family: var(--serif); font-size: 19px; margin-right: 6px; }
 .bn-facts i { width: 1px; height: 20px; background: rgba(226, 199, 138, 0.3); }
 
-───────────────────────────────────────────────── */
-.sort {
-  background: rgba(255, 253, 246, 0.9);
-  border: 1px solid rgba(226, 199, 138, 0.3);
-  border-radius: 999px;
-  color: var(--paper-dim);
-  font-family: var(--sans); font-size: 12.5px; font-weight: 500;
-  padding: 9px 14px;
-  cursor: pointer;
-  outline: none;
-}
-.sort option { background: var(--ink); color: var(--paper); }
-
 /* ── Дополнения карточки ───────────────────────────────────────── */
 .lot-fav {
   position: absolute; top: 22px; left: 22px; z-index: 2;
