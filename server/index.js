@@ -192,8 +192,15 @@ const REQUIRED_COMPANY = ["name", "regNr", "address", "phone", "email", "contact
 
 const companyReady = (s) => REQUIRED_COMPANY.every((f) => String(s.company?.[f] || "").trim());
 const termsReady = (s) => Boolean(s.terms?.acceptedAt);
+/* Готовность счёта: партнёр может принимать оплату и получать выплаты.
+   details_submitted ставится только после формы Stripe, поэтому его
+   достаточно как одного из признаков, а не как обязательного. */
 const stripeReady = (s) =>
-  Boolean(s.stripe?.chargesEnabled && s.stripe?.detailsSubmitted && (s.stripe?.mode || "live") === settings.mode());
+  Boolean(
+    s.stripe?.chargesEnabled &&
+      (s.stripe?.detailsSubmitted || s.stripe?.payoutsEnabled) &&
+      (s.stripe?.mode || "live") === settings.mode()
+  );
 
 /** Шаг, на котором партнёр стоит сейчас. */
 function partnerStage(s) {
