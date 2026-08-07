@@ -63,10 +63,14 @@ export function orderMoney({ itemsCents, shippingCents = 0, commissionBps = 2000
   };
 }
 
-/** Срок удержания выплаты: 14 дней права отказа с момента передачи товара. */
-export const HOLD_DAYS = Number(process.env.PAYOUT_HOLD_DAYS || 14);
+/** Срок удержания выплаты: дни права отказа с момента передачи товара.
+    Значение живое — владелец меняет его в настройках площадки. */
+let holdDaysFn = () => Number(process.env.PAYOUT_HOLD_DAYS || 14);
+export const setHoldDays = (fn) => { holdDaysFn = fn; };
+export const holdDays = () => holdDaysFn();
+
 export const releaseDate = (deliveredAt) =>
-  deliveredAt ? new Date(new Date(deliveredAt).getTime() + HOLD_DAYS * 864e5).toISOString() : null;
+  deliveredAt ? new Date(new Date(deliveredAt).getTime() + holdDays() * 864e5).toISOString() : null;
 
 /**
  * Состояние денег партнёра по заказу.

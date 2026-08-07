@@ -2,6 +2,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Category, Lang, Lot } from "../data/catalog";
 import { Select } from "../ui/Select";
 import { AdminPartners, AdminPayouts, PartnerCabinet } from "./Marketplace";
+import Goods, { type AdmLot } from "./Goods";
+import Orders, { needsAction, type Order } from "./Orders";
+import Settings from "./Settings";
+import { Toasts, ago, useToast } from "./ui";
 import "./admin.css";
 
 /* ═══ Панель маркетплейса VINTAGE MĒBELES ═══
@@ -68,6 +72,8 @@ interface OrderView {
 }
 interface Seller {
   id: string;
+  stage?: string;
+  canSell?: boolean;
   login: string;
   name: string;
   contact?: string;
@@ -95,6 +101,8 @@ interface Stats {
   rows?: StatsRow[];
   history?: OrderView[];
 }
+type Tab = "goods" | "orders" | "sellers" | "stats" | "payouts" | "cabinet" | "settings";
+
 interface Me {
   role: "admin" | "seller";
   id: string | null;
@@ -117,7 +125,7 @@ const empty = (): Lot => ({
   },
 });
 
-function useApi(token: string) {
+function useApi(token: string, onExpired?: () => void) {
   return useCallback(
     async (url: string, opts: RequestInit = {}) => {
       const res = await fetch(url, {
@@ -128,10 +136,15 @@ function useApi(token: string) {
           ...(opts.headers || {}),
         },
       });
+      /* Истёкший вход выглядел бы как «данных нет» — гасим сразу */
+      if (res.status === 401) {
+        onExpired?.();
+        throw new Error("Сессия истекла — войдите заново");
+      }
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       return res.json();
     },
-    [token]
+    [token, onExpired]
   );
 }
 
@@ -182,16 +195,23 @@ function Login({ onIn }: { onIn: (t: string, me: Me) => void }) {
 function Editor({
   item,
   note,
+  isAdmin,
+  commission,
+  onSaved,
   onClose,
   onSave,
   api,
 }: {
   item: Lot;
   note?: string;
+  isAdmin: boolean;
+  commission: number;
+  onSaved?: () => void;
   onClose: () => void;
   onSave: (l: Lot) => void;
   api: ReturnType<typeof useApi>;
 }) {
+  const toast = useToast();
   const [p, setP] = useState<Lot>(structuredClone(item));
   const [tab, setTab] = useState<Lang>(
     () => (["lv", "en", "ru"] as Lang[]).find((l) => item.tr[l]?.title.trim()) || "lv"
@@ -216,7 +236,7 @@ function Editor({
       });
       setP((s) => ({ ...s, tr: { ...s.tr, ...done, [tab]: s.tr[tab] } }));
     } catch (e) {
-      alert(String((e as Error).message));
+      toast.err("Ошибка", String((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -274,24 +294,36 @@ function Editor({
         setP((s) => ({ ...s, images: [...s.images, ...images] }));
       }
     } catch (e) {
-      alert(String((e as Error).message));
+      toast.err("Ошибка", String((e as Error).message));
     } finally {
       setBusy(false);
       setProgress("");
     }
   };
 
-  const save = async () => {
+  const save = async (next = false) => {
     if (!p.tr.lv.title.trim() && !p.tr.en.title.trim() && !p.tr.ru.title.trim())
-      return alert("Заполните карточку хотя бы на одном языке");
+      return toast.err("Заполните карточку хотя бы на одном языке");
     setBusy("save");
     try {
       const saved = await api("api/admin/products", { method: "POST", body: JSON.stringify(p) });
-      if (saved?.translateError)
-        alert(`Товар сохранён, но авто-перевод не сработал:\n${saved.translateError}\n\nЗаполните языки вручную или нажмите «Перевести».`);
-      onSave(saved);
+      if (saved?.translateError) toast.err("Карточка сохранена, но перевод не сработал", saved.translateError);
+      else toast.ok(`№${saved.n} сохранён${next ? " · вводите следующий" : ""}`);
+      if (next) {
+        /* Конвейер: категория, продавец и эпоха остаются от предыдущей карточки */
+        const base = structuredClone(p);
+        setP({
+          ...base, id: 0, n: "", price: 0, images: [], source: "", sold: false,
+          tr: {
+            lv: { title: "", era: base.tr.lv.era, desc: "" },
+            en: { title: "", era: base.tr.en.era, desc: "" },
+            ru: { title: "", era: base.tr.ru.era, desc: "" },
+          },
+        });
+        onSaved?.();
+      } else onSave(saved);
     } catch (e) {
-      alert(String((e as Error).message));
+      toast.err("Не сохранилось", String((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -320,6 +352,13 @@ function Editor({
                 onChange={(e) => setP({ ...p, price: Number(e.target.value) })}
                 placeholder="450"
               />
+              {/* Партнёр должен видеть свою долю до того, как поставит цену */}
+              {!isAdmin && p.price > 0 && (
+                <small className="adm-hint">
+                  Pircējam €{p.price} → SOFA.LV komisija {commission}% −€{Math.round((p.price * commission) / 100)} →{" "}
+                  <b>Jums €{p.price - Math.round((p.price * commission) / 100)}</b>. Stripe komisiju sedz sofa.lv.
+                </small>
+              )}
             </label>
             <label className="adm-f">
               <span>Категория</span>
@@ -332,7 +371,15 @@ function Editor({
             </label>
             <label className="adm-f adm-check">
               <input type="checkbox" checked={!!p.sold} onChange={(e) => setP({ ...p, sold: e.target.checked })} />
-              <span>Продано</span>
+              <span>{isAdmin ? "Продано" : "Pārdots"}</span>
+            </label>
+            <label className="adm-f adm-check">
+              <input
+                type="checkbox"
+                checked={!!(p as Lot & { hidden?: boolean }).hidden}
+                onChange={(e) => setP({ ...p, hidden: e.target.checked } as Lot)}
+              />
+              <span>{isAdmin ? "Скрыть с витрины" : "Paslēpt no skatloga"}</span>
             </label>
           </div>
 
@@ -448,7 +495,12 @@ function Editor({
         <footer className="adm-modal-foot">
           <span className="adm-foot-hint">Пустые языки заполнятся автоматически при сохранении</span>
           <button className="adm-btn adm-ghost" onClick={onClose}>Отмена</button>
-          <button className="adm-btn" onClick={save} disabled={!!busy}>
+          {!item.id && (
+            <button className="adm-btn adm-ghost" onClick={() => save(true)} disabled={!!busy}>
+              Сохранить и добавить ещё
+            </button>
+          )}
+          <button className="adm-btn" onClick={() => save()} disabled={!!busy}>
             {busy === "save" ? "Сохранение…" : "Сохранить"}
           </button>
         </footer>
@@ -479,14 +531,16 @@ function SellerForm({
     password: "",
   });
   const [busy, setBusy] = useState(false);
+  const toast = useToast();
 
   const save = async () => {
     setBusy(true);
     try {
       await api("api/admin/sellers", { method: "POST", body: JSON.stringify(f) });
+      toast.ok("Продавец сохранён");
       onSave();
     } catch (e) {
-      alert(String((e as Error).message));
+      toast.err("Ошибка", String((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -548,15 +602,29 @@ function SellerForm({
 
 /* ── панель ── */
 export default function AdminApp() {
+  return (
+    <Toasts>
+      <Panel />
+    </Toasts>
+  );
+}
+
+function Panel() {
   const [token, setToken] = useState(() => localStorage.getItem("epoha-token") || "");
   const [me, setMe] = useState<Me | null>(null);
-  const api = useApi(token);
+  const toast = useToast();
+  /* Просроченный вход не должен выглядеть как пустая база */
+  const api = useApi(token, () => {
+    localStorage.removeItem("epoha-token");
+    setToken("");
+    setMe(null);
+  });
 
-  const [items, setItems] = useState<Lot[]>([]);
-  const [orders, setOrders] = useState<OrderView[]>([]);
+  const [items, setItems] = useState<AdmLot[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [sellers, setSellers] = useState<Seller[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
-  const [tab, setTab] = useState<"goods" | "orders" | "sellers" | "stats" | "payouts" | "cabinet">("goods");
+  const [tab, setTab] = useState<Tab>("orders");
   const [stage, setStage] = useState<string>("");
 
   const [edit, setEdit] = useState<Lot | null>(null);
@@ -565,18 +633,10 @@ export default function AdminApp() {
   const [url, setUrl] = useState("");
   const [busy, setBusy] = useState("");
 
-  const [q, setQ] = useState("");
-  const [fCat, setFCat] = useState("all");
-  const [fSeller, setFSeller] = useState("all");
-  const [fSort, setFSort] = useState("new");
-  const [fMin, setFMin] = useState("");
-  const [fMax, setFMax] = useState("");
-  const [oq, setOq] = useState("");
-  const [oStatus, setOStatus] = useState("all");
-  const [oDelivery, setODelivery] = useState("all");
-  const [oSort, setOSort] = useState("new");
-  const [oMin, setOMin] = useState("");
-  const [oMax, setOMax] = useState("");
+  /* Состояние загрузки на каждый список: пусто ≠ не загрузилось */
+  const [load, setLoad] = useState({ items: true, orders: true });
+  const [failed, setFailed] = useState({ items: "", orders: "" });
+  const [freshAt, setFreshAt] = useState<number | null>(null);
 
   const isAdmin = me?.role === "admin";
 
@@ -593,10 +653,16 @@ export default function AdminApp() {
 
   /* Панель показывает весь свой каталог, включая скрытые с витрины товары */
   const loadProducts = useCallback(() => {
-    api("api/admin/products").then(setItems).catch(() => setItems([]));
+    api("api/admin/products")
+      .then((d) => { setItems(d); setFailed((f) => ({ ...f, items: "" })); })
+      .catch((e) => setFailed((f) => ({ ...f, items: String(e.message) })))
+      .finally(() => setLoad((l) => ({ ...l, items: false })));
   }, [api]);
   const loadOrders = useCallback(() => {
-    api("api/admin/orders").then(setOrders).catch(() => {});
+    api("api/admin/orders")
+      .then((d) => { setOrders(d); setFailed((f) => ({ ...f, orders: "" })); setFreshAt(Date.now()); })
+      .catch((e) => setFailed((f) => ({ ...f, orders: String(e.message) })))
+      .finally(() => setLoad((l) => ({ ...l, orders: false })));
   }, [api]);
   const loadSellers = useCallback(() => {
     api("api/admin/sellers").then(setSellers).catch(() => {});
@@ -614,52 +680,35 @@ export default function AdminApp() {
     else api("api/partner/me").then((p) => setStage(p.stage)).catch(() => {});
   }, [me, api, loadProducts, loadOrders, loadStats, loadSellers]);
 
+  /* Уведомления могут быть не настроены — тогда панель единственный канал:
+     обновляем её сами, но только пока вкладка на экране. */
+  useEffect(() => {
+    if (!me) return;
+    const tick = () => {
+      if (document.hidden) return;
+      loadOrders();
+      loadStats();
+    };
+    const timer = setInterval(tick, 30000);
+    const onShow = () => !document.hidden && tick();
+    addEventListener("visibilitychange", onShow);
+    return () => {
+      clearInterval(timer);
+      removeEventListener("visibilitychange", onShow);
+    };
+  }, [me, loadOrders, loadStats]);
+
   const myItems = useMemo(
-    () => (isAdmin ? items : items.filter((i) => (i as Lot & { sellerId?: string }).sellerId === me?.id)),
+    () => (isAdmin ? items : items.filter((i) => i.sellerId === me?.id)),
     [items, isAdmin, me]
   );
 
-  const shown = useMemo(() => {
-    let list = myItems.slice();
-    const s = q.trim().toLowerCase();
-    if (s)
-      list = list.filter((i) =>
-        `${i.n} ${i.tr.lv.title} ${i.tr.en.title} ${i.tr.ru.title}`.toLowerCase().includes(s)
-      );
-    if (fCat !== "all") list = list.filter((i) => i.cat === fCat);
-    if (fSeller !== "all")
-      list = list.filter(
-        (i) => ((i as Lot & { sellerId?: string | null }).sellerId || "shop") === fSeller
-      );
-    const min = Number(fMin) || 0;
-    const max = Number(fMax) || Infinity;
-    list = list.filter((i) => i.price >= min && i.price <= max);
-    const ts = (i: Lot) => (i.createdAt ? Date.parse(i.createdAt) : 0);
-    if (fSort === "new") list.sort((a, b) => ts(b) - ts(a));
-    if (fSort === "old") list.sort((a, b) => ts(a) - ts(b));
-    if (fSort === "cheap") list.sort((a, b) => a.price - b.price);
-    if (fSort === "rich") list.sort((a, b) => b.price - a.price);
-    return list;
-  }, [myItems, q, fCat, fSeller, fSort, fMin, fMax]);
+  /* Сколько дел ждёт: этим числом живут бейджи и заголовок вкладки */
+  const todo = useMemo(() => orders.filter(needsAction).length, [orders]);
+  useEffect(() => {
+    document.title = todo ? `(${todo}) Панель · SOFA.LV` : "Панель · SOFA.LV";
+  }, [todo]);
 
-  const shownOrders = useMemo(() => {
-    let list = orders.slice();
-    const s = oq.trim().toLowerCase();
-    if (s)
-      list = list.filter((o) =>
-        `${o.order} ${o.name || ""} ${o.email || ""} ${o.contact || ""} ${o.address || ""}`.toLowerCase().includes(s)
-      );
-    if (oStatus !== "all") list = list.filter((o) => (o.status || "new") === oStatus);
-    if (oDelivery !== "all") list = list.filter((o) => o.delivery === oDelivery);
-    const min = Number(oMin) || 0;
-    const max = Number(oMax) || Infinity;
-    list = list.filter((o) => (o.total ?? 0) >= min && (o.total ?? 0) <= max);
-    if (oSort === "new") list.sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
-    if (oSort === "old") list.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
-    if (oSort === "big") list.sort((a, b) => (b.total ?? 0) - (a.total ?? 0));
-    if (oSort === "small") list.sort((a, b) => (a.total ?? 0) - (b.total ?? 0));
-    return list;
-  }, [orders, oq, oStatus, oDelivery, oSort, oMin, oMax]);
 
   if (!token || !me) return <Login onIn={(t, m) => { setToken(t); setMe(m); }} />;
 
@@ -674,64 +723,18 @@ export default function AdminApp() {
       setEdit({ ...base, ...draft, price: draft.priceHint ? Math.round(draft.priceHint * 3) : 0, tr: draft.tr || base.tr });
       setUrl("");
     } catch (e) {
-      alert(String((e as Error).message));
+      toast.err("Импорт не удался", String((e as Error).message));
     } finally {
       setBusy("");
     }
   };
 
-  const remove = async (l: Lot) => {
-    if (!confirm(`Удалить «${l.tr.lv.title || l.tr.en.title}»?`)) return;
-    try {
-      await api(`api/admin/products/${l.id}`, { method: "DELETE" });
-      loadProducts();
-    } catch (e) {
-      alert(String((e as Error).message));
-    }
-  };
-  const markDelivered = async (num: string, delivered: boolean) => {
-    try {
-      await api(`api/admin/orders/${num}`, { method: "POST", body: JSON.stringify({ delivered }) });
-      loadOrders();
-    } catch (e) {
-      alert(String((e as Error).message));
-    }
-  };
-
-  /* Возврат идёт через Stripe: у товара партнёра вместе с деньгами
-     покупателю возвращается и наша комиссия. */
-  const refundOrder = async (num: string, total?: number) => {
-    if (!confirm(`Вернуть покупателю ${money(total)} по заказу ${num}?`)) return;
-    try {
-      const r = await api(`api/admin/orders/${num}/refund`, { method: "POST", body: JSON.stringify({}) });
-      alert(`Возврат ${money((r.refund?.amount || 0) / 100)} — статус ${r.refund?.status}`);
-      loadOrders();
-      loadStats();
-    } catch (e) {
-      alert(String((e as Error).message));
-    }
-  };
-
-  const setStatus = async (num: string, status: string) => {
-    await api(`api/admin/orders/${num}`, { method: "POST", body: JSON.stringify({ status }) });
-    loadOrders();
-    loadStats();
-  };
-  const removeOrder = async (num: string) => {
-    if (!confirm(`Удалить заказ ${num}?`)) return;
-    await api(`api/admin/orders/${num}`, { method: "DELETE" });
-    loadOrders();
-    loadStats();
-  };
   const removeSeller = async (s: Seller) => {
     if (!confirm(`Удалить продавца «${s.name}»? Его товары останутся на витрине.`)) return;
     await api(`api/admin/sellers/${s.id}`, { method: "DELETE" });
     loadSellers();
     loadStats();
   };
-
-  const sellerName = (id?: string | null) =>
-    id ? sellers.find((s) => s.id === id)?.name || "продавец" : "витрина магазина";
 
   return (
     <div className="adm">
@@ -742,14 +745,14 @@ export default function AdminApp() {
         </span>
         <nav>
           <button className={tab === "goods" ? "on" : ""} onClick={() => setTab("goods")}>
-            {isAdmin ? "Товары" : "Мои товары"} <i>{myItems.length}</i>
+            {isAdmin ? "Товары" : "Manas preces"} <i>{myItems.length}</i>
           </button>
           <button className={tab === "orders" ? "on" : ""} onClick={() => setTab("orders")}>
-            {isAdmin ? "Заказы" : "Мои продажи"} <i>{orders.length}</i>
+            {isAdmin ? "Заказы" : "Pārdevumi"} {todo > 0 && <i className="hot">{todo}</i>}
           </button>
           {isAdmin && (
             <button className={tab === "sellers" ? "on" : ""} onClick={() => setTab("sellers")}>
-              Продавцы <i>{sellers.length}</i>
+              Продавцы {sellers.some((s) => s.stage === "review") && <i className="hot">!</i>}
             </button>
           )}
           {isAdmin && (
@@ -759,13 +762,19 @@ export default function AdminApp() {
           )}
           {!isAdmin && (
             <button className={tab === "cabinet" ? "on" : ""} onClick={() => setTab("cabinet")}>
-              Кабинет
+              Konts
             </button>
           )}
           <button className={tab === "stats" ? "on" : ""} onClick={() => setTab("stats")}>
-            {isAdmin ? "Статистика" : "Заработок"}
+            {isAdmin ? "Статистика" : "Ieņēmumi"}
           </button>
+          {isAdmin && (
+            <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>
+              Настройки
+            </button>
+          )}
         </nav>
+        {freshAt && <span className="adm-fresh" title="Список обновляется сам каждые 30 секунд">{ago(freshAt)}</span>}
         <a href="#/" className="adm-link">Витрина ↗</a>
         <button
           className="adm-link"
@@ -782,47 +791,46 @@ export default function AdminApp() {
       {tab === "goods" && (
         <>
           {isAdmin ? (
-          <section className="adm-import">
-            <div className="adm-import-main">
-              <label className="adm-f">
-                <span>Импорт по ссылке — вставьте адрес товара с аукциона</span>
-                <div className="adm-row">
-                  <input
-                    value={url}
-                    onChange={(e) => setUrl(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && doImport()}
-                    placeholder="https://auctionet.com/en/5212622-sofa-rococo-style"
-                  />
-                  <button className="adm-btn" onClick={doImport} disabled={!!busy}>
-                    {busy ? "…" : "Импортировать"}
-                  </button>
-                </div>
-              </label>
-              <p className="adm-hint">
-                Фото и описание подтянутся автоматически — вам останется поставить цену и
-                перевести карточку. {busy}
-              </p>
-            </div>
-            <button className="adm-btn adm-ghost" onClick={() => { setNote(""); setEdit(empty()); }}>
-              + Добавить вручную
-            </button>
-          </section>
+            <details className="adm-import adm-import-fold" open={window.innerWidth > 720}>
+              <summary>+ Добавить товар</summary>
+              <div className="adm-import-main">
+                <label className="adm-f">
+                  <span>Импорт по ссылке — вставьте адрес товара с аукциона</span>
+                  <div className="adm-row">
+                    <input
+                      value={url}
+                      onChange={(e) => setUrl(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && doImport()}
+                      placeholder="https://auctionet.com/en/5212622-sofa-rococo-style"
+                    />
+                    <button className="adm-btn" onClick={doImport} disabled={!!busy}>
+                      {busy ? "…" : "Импортировать"}
+                    </button>
+                  </div>
+                </label>
+                <p className="adm-hint">
+                  Фото и описание подтянутся автоматически — вам останется поставить цену. {busy}
+                </p>
+              </div>
+              <button className="adm-btn adm-ghost" onClick={() => { setNote(""); setEdit(empty()); }}>
+                + Добавить вручную
+              </button>
+            </details>
           ) : (
             <section className="adm-import">
               <div className="adm-import-main">
-                <b className="adm-sec-title">Ваши товары на витрине</b>
+                <b className="adm-sec-title">Jūsu preces</b>
                 <p className="adm-hint">
-                  Заполните карточку, загрузите фото со своего устройства — товар появится на
-                  витрине сразу на трёх языках. Переводы сделаем автоматически.
+                  Aizpildiet kartīti un pievienojiet fotoattēlus — prece parādīsies skatlogā uzreiz
+                  trīs valodās. Tulkojumus veiksim automātiski.
                 </p>
               </div>
               <button className="adm-btn" onClick={() => { setNote(""); setEdit(empty()); }}>
-                + Добавить товар
+                + Pievienot preci
               </button>
             </section>
           )}
 
-          {/* Пока подключение не завершено, товары партнёра на витрину не выходят */}
           {!isAdmin && stage && stage !== "active" && (
             <section className="adm-import mp-gate">
               <div className="adm-import-main">
@@ -832,248 +840,41 @@ export default function AdminApp() {
                   Stripe konts → SOFA.LV pārbaude.
                 </p>
               </div>
-              <button className="adm-btn" onClick={() => setTab("cabinet")}>
-                Turpināt pievienošanos →
-              </button>
+              <button className="adm-btn" onClick={() => setTab("cabinet")}>Turpināt →</button>
             </section>
           )}
 
-          <div className="adm-filters">
-            <input className="adm-fl-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по названию или номеру" />
-            <Select
-              className="sel-sq"
-              value={fCat}
-              onChange={setFCat}
-              options={[{ value: "all", label: "Все категории" }, ...CATS.map((c) => ({ value: c.v, label: c.l }))]}
-            />
-            {isAdmin && (
-              <Select
-                className="sel-sq"
-                value={fSeller}
-                onChange={setFSeller}
-                options={[
-                  { value: "all", label: "Все продавцы" },
-                  { value: "shop", label: "Витрина магазина" },
-                  ...sellers.map((s) => ({ value: s.id, label: s.name })),
-                ]}
-              />
-            )}
-            <Select
-              className="sel-sq"
-              value={fSort}
-              onChange={setFSort}
-              options={[
-                { value: "new", label: "Сначала новые" },
-                { value: "old", label: "Сначала старые" },
-                { value: "cheap", label: "Дешевле" },
-                { value: "rich", label: "Дороже" },
-              ]}
-            />
-            <div className="adm-fl-range">
-              <input type="number" value={fMin} onChange={(e) => setFMin(e.target.value)} placeholder="€ от" />
-              <input type="number" value={fMax} onChange={(e) => setFMax(e.target.value)} placeholder="€ до" />
-            </div>
-            <span className="adm-fl-count">{shown.length}</span>
-            {(q || fCat !== "all" || fSeller !== "all" || fSort !== "new" || fMin || fMax) && (
-              <button
-                className="adm-fl-reset"
-                onClick={() => { setQ(""); setFCat("all"); setFSeller("all"); setFSort("new"); setFMin(""); setFMax(""); }}
-              >
-                ✕ сбросить
-              </button>
-            )}
-          </div>
-
-          <div className="adm-list">
-            {shown.map((l) => {
-              const sid = (l as Lot & { sellerId?: string | null }).sellerId || null;
-              return (
-                <article className="adm-card" key={l.id}>
-                  <img src={l.images[0] || ""} alt="" />
-                  <div className="adm-card-main">
-                    <b>{l.tr.lv.title || l.tr.en.title || "— без названия —"}</b>
-                    <span>
-                      № {l.n} · {CATS.find((c) => c.v === l.cat)?.l} · {l.images.length} фото
-                      {l.createdAt ? ` · ${new Date(l.createdAt).toLocaleDateString("ru-RU")}` : ""}
-                    </span>
-                    <span className="adm-langs">
-                      {LANGS.map((x) => (
-                        <i key={x.v} className={l.tr[x.v].title ? "ok" : ""}>{x.v.toUpperCase()}</i>
-                      ))}
-                      {isAdmin && <i className="adm-seller-tag">{sellerName(sid)}</i>}
-                    </span>
-                  </div>
-                  <div className="adm-card-right">
-                    <b>€{l.price}</b>
-                    {l.sold && <span className="adm-sold">продано</span>}
-                    <div>
-                      <button className="adm-btn adm-btn-sm" onClick={() => { setNote(""); setEdit(l); }}>Изменить</button>
-                      <button className="adm-btn adm-btn-sm adm-danger" onClick={() => remove(l)}>Удалить</button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-            {shown.length === 0 && (
-              <p className="adm-empty">
-                {isAdmin
-                  ? "Товаров нет — импортируйте по ссылке или добавьте вручную."
-                  : "У вас пока нет товаров. Добавьте первый — он появится на витрине."}
-              </p>
-            )}
-          </div>
+          <Goods
+            items={myItems}
+            sellers={sellers.map((s) => ({ id: s.id, name: s.name }))}
+            cats={CATS}
+            api={api}
+            isAdmin={!!isAdmin}
+            loading={load.items}
+            error={failed.items}
+            onReload={() => { loadProducts(); loadStats(); }}
+            onEdit={(p) => { setNote(""); setEdit(p as Lot); }}
+            onDuplicate={(p) => {
+              setNote("Копия карточки: проверьте номер и цену перед сохранением.");
+              setEdit({ ...(p as Lot), id: 0, n: "", sold: false, createdAt: undefined });
+            }}
+          />
         </>
       )}
+
 
       {tab === "orders" && (
-        <>
-          <div className="adm-filters">
-            <input className="adm-fl-search" value={oq} onChange={(e) => setOq(e.target.value)} placeholder="Поиск: номер, имя, почта, телефон, адрес" />
-            <Select
-              className="sel-sq"
-              value={oStatus}
-              onChange={setOStatus}
-              options={[
-                { value: "all", label: "Любой статус" },
-                { value: "new", label: "Новые" },
-                { value: "paid", label: "Оплаченные" },
-                { value: "done", label: "Выполненные" },
-                { value: "cancelled", label: "Отменённые" },
-              ]}
-            />
-            <Select
-              className="sel-sq"
-              value={oDelivery}
-              onChange={setODelivery}
-              options={[
-                { value: "all", label: "Любое получение" },
-                { value: "pickup", label: "Самовывоз" },
-                { value: "courier", label: "Доставка" },
-              ]}
-            />
-            <Select
-              className="sel-sq"
-              value={oSort}
-              onChange={setOSort}
-              options={[
-                { value: "new", label: "Сначала новые" },
-                { value: "old", label: "Сначала старые" },
-                { value: "big", label: "Сумма больше" },
-                { value: "small", label: "Сумма меньше" },
-              ]}
-            />
-            <div className="adm-fl-range">
-              <input type="number" value={oMin} onChange={(e) => setOMin(e.target.value)} placeholder="€ от" />
-              <input type="number" value={oMax} onChange={(e) => setOMax(e.target.value)} placeholder="€ до" />
-            </div>
-            <span className="adm-fl-count">{shownOrders.length}</span>
-          </div>
-
-          <div className="adm-list">
-            {shownOrders.length === 0 && <p className="adm-empty">Заказы не найдены.</p>}
-            {shownOrders.map((o) => {
-              const status = o.status || "new";
-              return (
-                <article className="adm-ord" key={o.order}>
-                  <header className="adm-ord-top">
-                    <b>{o.order}</b>
-                    <span className={`adm-badge adm-st-${status}`}>{STATUS[status] || status}</span>
-                    <time>{new Date(o.at).toLocaleString("ru-RU")}</time>
-                    <u>{money(o.total)}</u>
-                  </header>
-
-                  <div className="adm-ord-who">
-                    <span><i>Покупатель</i>{o.name} · {o.contact}{o.email ? ` · ${o.email}` : ""}</span>
-                    <span>
-                      <i>Получение</i>
-                      {o.delivery === "courier"
-                        ? `Доставка до дверей${o.deliveryFee ? ` (+€${o.deliveryFee})` : ""} — ${o.address || "адрес не указан"}`
-                        : o.delivery === "pickup"
-                          ? "Самовывоз со склада в Талси (бесплатно)"
-                          : "—"}
-                    </span>
-                    {o.comment && <span><i>Комментарий</i>{o.comment}</span>}
-                  </div>
-
-                  <div className="adm-ord-items">
-                    {(o.items || []).map((it, k) => {
-                      const prod = items.find((x) => x.id === it.id);
-                      const img = it.img || prod?.images?.[0] || "";
-                      return (
-                        <div className="adm-ord-item" key={String(it.id) + k}>
-                          {img ? <img src={img} alt="" /> : <span className="adm-ord-noimg" />}
-                          <span>
-                            <b>{it.title || prod?.tr.lv.title || `#${it.id}`}</b>
-                            <i>
-                              № {it.n ?? prod?.n ?? "—"}
-                              {isAdmin ? ` · ${sellerName(it.sellerId)}` : ""}
-                            </i>
-                          </span>
-                          <em>{money(it.price)}</em>
-                        </div>
-                      );
-                    })}
-                    {isAdmin && o.deliveryFee ? (
-                      <div className="adm-ord-item adm-ord-ship">
-                        <span><b>Доставка</b></span>
-                        <em>{money(o.deliveryFee)}</em>
-                      </div>
-                    ) : null}
-                  </div>
-
-                  {!isAdmin && (
-                    <div className="adm-ord-money">
-                      <span>Ваши позиции <b>{money(o.total)}</b></span>
-                      <span>Комиссия площадки <b>−{money(o.fee)}</b></span>
-                      <span className="adm-ord-net">К выплате <b>{money(o.net)}</b></span>
-                      {o.payoutState && (
-                        <span className={`mp-badge mp-badge-${o.payoutState}`}>
-                          {o.payoutState === "held"
-                            ? `aizturēts${o.releaseAt ? " līdz " + new Date(o.releaseAt).toLocaleDateString("lv-LV") : ""}`
-                            : o.payoutState === "available" ? "gatavs izmaksai"
-                            : o.payoutState === "paid" ? "izmaksāts"
-                            : o.payoutState === "refunded" ? "atmaksāts"
-                            : o.payoutState === "disputed" ? "strīds" : "gaida apmaksu"}
-                        </span>
-                      )}
-                    </div>
-                  )}
-
-                  {isAdmin && (
-                    <footer className="adm-ord-foot">
-                      {(["paid", "done", "cancelled"] as const).map((st) => (
-                        <button
-                          key={st}
-                          className={`adm-btn adm-btn-sm${status === st ? "" : " adm-ghost"}`}
-                          onClick={() => setStatus(o.order, st)}
-                        >
-                          {STATUS[st]}
-                        </button>
-                      ))}
-                      <button
-                        className={`adm-btn adm-btn-sm${o.deliveredAt ? "" : " adm-ghost"}`}
-                        title="С этого дня идёт отсчёт 14 дней до выплаты партнёру"
-                        onClick={() => markDelivered(o.order, !o.deliveredAt)}
-                      >
-                        {o.deliveredAt
-                          ? `Передан ${new Date(o.deliveredAt).toLocaleDateString("ru-RU")}`
-                          : "Передан покупателю"}
-                      </button>
-                      {(o.charge || o.paymentIntent) && !o.refundedAt && (
-                        <button className="adm-btn adm-btn-sm adm-ghost" onClick={() => refundOrder(o.order, o.total)}>
-                          Вернуть деньги
-                        </button>
-                      )}
-                      {o.refundedAt && <span className="adm-badge adm-st-cancelled">возврат оформлен</span>}
-                      <button className="adm-btn adm-btn-sm adm-danger" onClick={() => removeOrder(o.order)}>Удалить</button>
-                    </footer>
-                  )}
-                </article>
-              );
-            })}
-          </div>
-        </>
+        <Orders
+          orders={orders}
+          sellers={sellers.map((s) => ({ id: s.id, name: s.name }))}
+          api={api}
+          isAdmin={!!isAdmin}
+          loading={load.orders}
+          error={failed.orders}
+          onReload={() => { loadOrders(); loadStats(); loadProducts(); }}
+        />
       )}
+
 
       {tab === "sellers" && isAdmin && (
         <>
@@ -1110,6 +911,7 @@ export default function AdminApp() {
       )}
 
       {tab === "payouts" && isAdmin && <AdminPayouts api={api} />}
+      {tab === "settings" && isAdmin && <Settings api={api} />}
       {tab === "cabinet" && !isAdmin && (
         <PartnerCabinet api={api} onChanged={() => { loadProducts(); loadStats(); }} />
       )}
@@ -1204,6 +1006,8 @@ export default function AdminApp() {
         <Editor
           item={edit}
           note={note}
+          isAdmin={!!isAdmin}
+          commission={me.commission ?? 20}
           api={api}
           onClose={() => { setEdit(null); setNote(""); }}
           onSave={() => { setEdit(null); setNote(""); loadProducts(); loadStats(); }}

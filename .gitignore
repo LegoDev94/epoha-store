@@ -9,3 +9,11 @@ data/uploads/
 
 # артефакт сборки TypeScript
 *.tsbuildinfo
+
+# рабочие данные площадки — живут только на сервере
+data/store.json
+data/orders.json
+data/sellers.json
+data/settings.json
+data/audit.log
+data/uploads/

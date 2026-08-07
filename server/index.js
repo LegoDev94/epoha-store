@@ -12,8 +12,9 @@ import fsp from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as connect from "./connect.js";
+import * as settings from "./settings.js";
 import * as legal from "./legal.js";
-import { HOLD_DAYS, orderMoney, payoutState, releaseDate, toCents, toEur } from "./money.js";
+import { holdDays, orderMoney, payoutState, releaseDate, setHoldDays, toCents, toEur } from "./money.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
@@ -30,6 +31,8 @@ const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36";
 
 fs.mkdirSync(UPLOADS, { recursive: true });
+settings.init(DATA_DIR);
+setHoldDays(() => settings.get("holdDays"));
 if (!fs.existsSync(STORE)) {
   fs.copyFileSync(SEED, STORE);
   console.log("[epoha] store.json создан из сида");
@@ -87,7 +90,7 @@ backfillDates();
 /* ── аккаунты: главный админ + продавцы маркетплейса ── */
 const SELLERS = path.join(DATA_DIR, "sellers.json");
 const ADMIN_LOGIN = process.env.ADMIN_LOGIN || "admin";
-const COMMISSION = Number(process.env.COMMISSION || 20); // процент площадки
+const COMMISSION = () => settings.get("commission"); // процент площадки, меняется из панели
 
 const loadSellers = () => readJson(SELLERS, []);
 const saveSellers = (list) => writeJson(SELLERS, list);
@@ -119,7 +122,7 @@ const auth = async (req, res, next) => {
   const data = readToken(req.get("x-token"));
   if (!data) return res.status(401).json({ error: "unauthorized" });
   if (data.r === "admin") {
-    req.actor = { role: "admin", id: null, name: "Администратор", commission: COMMISSION };
+    req.actor = { role: "admin", id: null, name: "Администратор", commission: COMMISSION() };
     return next();
   }
   const seller = (await loadSellers()).find((x) => x.id === data.i && x.active !== false);
@@ -128,12 +131,52 @@ const auth = async (req, res, next) => {
     role: "seller",
     id: seller.id,
     name: seller.name,
-    commission: Number(seller.commission ?? COMMISSION),
+    commission: Number(seller.commission ?? COMMISSION()),
   };
   next();
 };
 const adminOnly = (req, res, next) =>
   req.actor?.role === "admin" ? next() : res.status(403).json({ error: "forbidden" });
+
+/* ── журнал действий ──
+   Кто, когда и что поменял. Дописывается построчно, чтобы запись
+   нельзя было незаметно переписать. */
+const AUDIT = path.join(DATA_DIR, "audit.log");
+
+function logAction(req, action, target, before, after) {
+  const actor = req?.actor || {};
+  const line = JSON.stringify({
+    at: new Date().toISOString(),
+    actor: { role: actor.role || "?", id: actor.id || null, name: actor.name || "" },
+    ip: legal.clientIp(req),
+    action,
+    target,
+    ...(before !== undefined ? { before } : {}),
+    ...(after !== undefined ? { after } : {}),
+  });
+  fsp.appendFile(AUDIT, line + "\n", "utf8").catch((e) => console.warn("[sofa] журнал:", e.message));
+}
+
+/** Последние записи журнала, при желании — по одному объекту. */
+async function readAudit({ target = "", limit = 200 } = {}) {
+  let text = "";
+  try {
+    text = await fsp.readFile(AUDIT, "utf8");
+  } catch {
+    return [];
+  }
+  const rows = [];
+  for (const line of text.split("\n")) {
+    if (!line.trim()) continue;
+    try {
+      const r = JSON.parse(line);
+      if (!target || r.target === target) rows.push(r);
+    } catch {
+      /* строка повреждена — пропускаем, остальные читаются */
+    }
+  }
+  return rows.slice(-limit).reverse();
+}
 
 /** Доля площадки и чистая выручка продавца по одной сумме. */
 const split = (gross, rate) => {
@@ -337,8 +380,8 @@ function extractJson(raw) {
 }
 
 async function translateCard(src, from) {
-  const key = process.env.DEEPSEEK_API_KEY;
-  if (!key) throw new Error("DEEPSEEK_API_KEY не задан на сервере");
+  const key = settings.get("deepseekKey");
+  if (!key) throw new Error("Ключ перевода не задан — задайте его в настройках площадки");
   const targets = ["lv", "en", "ru"].filter((l) => l !== from);
   const prompt = [
     `Translate a product card of a premium vintage furniture shop from ${LANG_NAME[from]}`,
@@ -403,7 +446,7 @@ app.get("/api/products", async (_req, res) => {
   const live = new Set(sellers.filter(canSell).map((s) => s.id));
   res.json(
     list
-      .filter((p) => !p.sellerId || live.has(p.sellerId))
+      .filter((p) => !p.hidden && !p.archived && (!p.sellerId || live.has(p.sellerId)))
       .map(({ reservedBy, reservedUntil, ...p }) => p)
   );
 });
@@ -425,12 +468,12 @@ app.get("/api/legal/:id", (req, res) => {
   }
 });
 app.get("/api/platform", (_req, res) =>
-  res.json({ ...legal.PLATFORM, commission: COMMISSION, holdDays: HOLD_DAYS, deliveryFee: DELIVERY_FEE })
+  res.json({ ...legal.PLATFORM, commission: COMMISSION(), holdDays: holdDays(), deliveryFee: DELIVERY_FEE() })
 );
 
 /* ── Заказ: сначала регистрируем, потом ведём на оплату ──
    Суммы считает сервер по своему каталогу — клиенту не доверяем. */
-const DELIVERY_FEE = Number(process.env.DELIVERY_FEE || 50);
+const DELIVERY_FEE = () => settings.get("deliveryFee");
 const BASE_URL = process.env.BASE_URL || "http://72.62.112.227:8080";
 
 async function notifyOwner(order) {
@@ -449,8 +492,8 @@ async function notifyOwner(order) {
     .filter(Boolean)
     .join("\n");
 
-  const tg = process.env.TELEGRAM_BOT_TOKEN;
-  const chat = process.env.TELEGRAM_CHAT_ID;
+  const tg = settings.get("telegramToken");
+  const chat = settings.get("telegramChat");
   if (tg && chat) {
     try {
       await fetch(`https://api.telegram.org/bot${tg}/sendMessage`, {
@@ -462,15 +505,15 @@ async function notifyOwner(order) {
       console.warn("[vm] telegram:", String(e.message || e));
     }
   }
-  const resend = process.env.RESEND_API_KEY;
-  const to = process.env.ORDER_EMAIL;
+  const resend = settings.get("resendKey");
+  const to = settings.get("orderEmail");
   if (resend && to) {
     try {
       await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
         body: JSON.stringify({
-          from: process.env.ORDER_FROM || "orders@vintagemebeles.lv",
+          from: settings.get("orderFrom"),
           to,
           subject: `Заказ ${order.order} — €${order.total}`,
           text,
@@ -488,7 +531,7 @@ async function notifySeller(order) {
   if (!order.sellerId || order.status !== "paid") return;
   const seller = (await loadSellers()).find((s) => s.id === order.sellerId);
   const to = seller?.company?.email || seller?.contact || "";
-  const resend = process.env.RESEND_API_KEY;
+  const resend = settings.get("resendKey");
   const text = [
     `Apmaksāts pasūtījums ${order.order} (sofa.lv)`,
     order.items.map((i) => `• №${i.n} ${i.title} — €${i.price}`).join("\n"),
@@ -497,14 +540,14 @@ async function notifySeller(order) {
       : "Izņemšana Talsos",
     `Pircējs: ${order.name} · ${order.contact} · ${order.email}`,
     `Jums izmaksājamā summa: €${toEur(order.partnerNetCents)} (preces cena mīnus SOFA.LV komisija ${order.commissionBps / 100} %)`,
-    `Izmaksa — ne agrāk kā ${HOLD_DAYS} dienas pēc preces nodošanas pircējam.`,
+    `Izmaksa — ne agrāk kā ${holdDays()} dienas pēc preces nodošanas pircējam.`,
   ].join("\n");
   if (resend && to) {
     await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
       body: JSON.stringify({
-        from: process.env.ORDER_FROM || "orders@sofa.lv",
+        from: settings.get("orderFrom"),
         to,
         subject: `sofa.lv · ${order.order}`,
         text,
@@ -524,7 +567,7 @@ async function stripeSession(order) {
     applicationFeeCents: order.applicationFeeCents,
     successUrl: `${BASE_URL}/#/success/${order.order}?paid=1&s={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${BASE_URL}/#/checkout`,
-    expiresAt: Math.floor(Date.now() / 1000) + RESERVE_MIN * 60,
+    expiresAt: Math.floor(Date.now() / 1000) + RESERVE_MIN() * 60,
     locale: order.lang,
   });
   order.session = sess.id;
@@ -534,13 +577,13 @@ async function stripeSession(order) {
 /* ── резерв товара ──
    Предметы штучные: пока покупатель платит, товар держим за ним,
    иначе двое оплатят один и тот же диван. */
-const RESERVE_MIN = Number(process.env.RESERVE_MINUTES || 35);
+const RESERVE_MIN = () => settings.get("reserveMinutes");
 const reservedByOther = (p, orderId, now = Date.now()) =>
   Boolean(p.reservedUntil && Date.parse(p.reservedUntil) > now && p.reservedBy && p.reservedBy !== orderId);
 
 const reserveItems = (ids, orderId) =>
   updateJson(STORE, [], (list) => {
-    const until = new Date(Date.now() + RESERVE_MIN * 60000).toISOString();
+    const until = new Date(Date.now() + RESERVE_MIN() * 60000).toISOString();
     for (const p of list) if (ids.includes(p.id)) { p.reservedBy = orderId; p.reservedUntil = until; }
   });
 
@@ -611,8 +654,8 @@ app.post("/api/orders", async (req, res) => {
 
     const money = orderMoney({
       itemsCents: items.reduce((s, i) => s + i.cents, 0),
-      shippingCents: delivery === "courier" ? toCents(DELIVERY_FEE) : 0,
-      commissionBps: Math.round(Number(seller?.commission ?? COMMISSION) * 100),
+      shippingCents: delivery === "courier" ? toCents(DELIVERY_FEE()) : 0,
+      commissionBps: Math.round(Number(seller?.commission ?? COMMISSION()) * 100),
       partner: Boolean(seller),
     });
 
@@ -814,14 +857,30 @@ async function handleEvent(event) {
     case "checkout.session.expired":
       await closeOrder({ id: order.id }, "expired");
       break;
-    case "charge.refunded":
+    case "charge.refunded": {
+      const full = (obj.amount_refunded || 0) >= (obj.amount || 0);
       await updateJson(ORDERS, [], (list) => {
         const o = list.find((x) => x.id === order.id);
         if (!o) return;
         o.refundedCents = obj.amount_refunded || 0;
         o.refundedAt = new Date().toISOString();
-        if ((obj.amount_refunded || 0) >= (obj.amount || 0)) o.status = "cancelled";
+        if (full) o.status = "cancelled";
       });
+      if (full) await freeOrderItems(order);
+      break;
+    }
+    case "payout.paid":
+    case "payout.failed":
+      /* Выплата дошла до банка партнёра или не дошла — сохраняем причину */
+      await updateJson(ORDERS, [], (list) => {
+        for (const o of list)
+          if (o.payoutId === obj.id) {
+            o.payoutStatus = obj.status;
+            o.payoutArrival = obj.arrival_date || null;
+            o.payoutError = obj.failure_message || "";
+          }
+      });
+      if (type === "payout.failed") console.warn(`[sofa] выплата не прошла: ${obj.id} ${obj.failure_code}`);
       break;
     case "charge.dispute.created":
       await updateJson(ORDERS, [], (list) => {
@@ -877,7 +936,7 @@ const partnerView = (s) => ({
   id: s.id,
   login: s.login,
   name: s.name,
-  commission: Number(s.commission ?? COMMISSION),
+  commission: Number(s.commission ?? COMMISSION()),
   stage: partnerStage(s),
   status: s.status || "draft",
   company: s.company || {},
@@ -891,7 +950,7 @@ const partnerView = (s) => ({
       }
     : null,
   stripe: s.stripe || null,
-  holdDays: HOLD_DAYS,
+  holdDays: holdDays(),
 });
 
 app.get("/api/partner/me", auth, sellerSelf, async (req, res) => {
@@ -1000,7 +1059,7 @@ app.get("/api/admin/sellers/:id/terms.pdf", auth, adminOnly, async (req, res) =>
 /** Письмо партнёру с копией принятых условий. */
 async function sendTermsCopy(seller, record) {
   const to = record.representativeEmail || seller.company?.email;
-  const resend = process.env.RESEND_API_KEY;
+  const resend = settings.get("resendKey");
   const body = [
     "Jūs esat apstiprinājis SOFA.LV Partneru sadarbības noteikumus.",
     `Līguma versija: ${record.termsVersion}`,
@@ -1019,7 +1078,7 @@ async function sendTermsCopy(seller, record) {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
     body: JSON.stringify({
-      from: process.env.ORDER_FROM || "info@sofa.lv",
+      from: settings.get("orderFrom"),
       to,
       subject: "SOFA.LV — apstiprinātie sadarbības noteikumi",
       text: body,
@@ -1127,6 +1186,24 @@ async function payoutSummary(sellerId) {
   return { buckets, rows };
 }
 
+/** Партнёр отмечает передачу товара — отсчёт до выплаты идёт с этого дня. */
+app.post("/api/partner/orders/:num/delivered", auth, sellerSelf, async (req, res) => {
+  const out = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.order === req.params.num);
+    if (!o) return null;
+    if (o.sellerId !== req.actor.id) return { forbidden: true };
+    if (o.status !== "paid" && o.status !== "done") return { notPaid: true };
+    o.deliveredAt = o.deliveredAt || new Date().toISOString();
+    o.deliveredBy = "partner";
+    return { order: { ...o, releaseAt: releaseDate(o.deliveredAt), payoutState: payoutState(o) } };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  if (out.forbidden) return res.status(403).json({ error: "Cits pārdevējs" });
+  if (out.notPaid) return res.status(400).json({ error: "Pasūtījums vēl nav apmaksāts" });
+  logAction(req, "order.delivered", `order:${req.params.num}`, undefined, "partner");
+  res.json(out.order);
+});
+
 app.get("/api/partner/payouts", auth, sellerSelf, async (req, res) => {
   const s = (await loadSellers()).find((x) => x.id === req.actor.id);
   const { buckets, rows } = await payoutSummary(req.actor.id);
@@ -1139,12 +1216,185 @@ app.get("/api/partner/payouts", auth, sellerSelf, async (req, res) => {
       balance = { error: String(e.message || e) };
     }
   }
-  res.json({ holdDays: HOLD_DAYS, buckets, rows, balance });
+  res.json({ holdDays: holdDays(), buckets, rows, balance });
+});
+
+/* ── настройки площадки ── */
+app.get("/api/admin/settings", auth, adminOnly, (_req, res) =>
+  res.json({ values: settings.forPanel(), health: settings.health() })
+);
+
+app.post("/api/admin/settings", auth, adminOnly, async (req, res) => {
+  try {
+    const before = settings.forPanel();
+    const values = await settings.save(req.body || {});
+    logAction(req, "settings.save", "settings", Object.keys(req.body || {}).join(","), undefined);
+    /* Секреты в журнал не попадают — только имена изменённых полей */
+    void before;
+    res.json({ values, health: settings.health() });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+app.get("/api/admin/health", auth, adminOnly, (_req, res) => res.json(settings.health()));
+
+/** Проверка канала уведомлений: отправляем себе тестовое сообщение. */
+app.post("/api/admin/settings/test-notify", auth, adminOnly, async (req, res) => {
+  const kind = req.body?.kind === "email" ? "email" : "telegram";
+  const text = "SOFA.LV: проверка уведомлений. Если вы это читаете — канал работает.";
+  try {
+    if (kind === "telegram") {
+      const token = settings.get("telegramToken");
+      const chat = settings.get("telegramChat");
+      if (!token || !chat) return res.status(400).json({ error: "Не заданы токен бота и chat id" });
+      const r = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ chat_id: chat, text }),
+      });
+      const d = await r.json();
+      if (!d.ok) return res.status(400).json({ error: d.description || "Telegram отказал" });
+    } else {
+      const key = settings.get("resendKey");
+      const to = settings.get("orderEmail");
+      if (!key || !to) return res.status(400).json({ error: "Не заданы ключ Resend и адрес для заказов" });
+      const r = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
+        body: JSON.stringify({ from: settings.get("orderFrom"), to, subject: "SOFA.LV — проверка", text }),
+      });
+      const d = await r.json();
+      if (d.error) return res.status(400).json({ error: d.error.message || "Resend отказал" });
+    }
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+app.get("/api/admin/audit", auth, adminOnly, async (req, res) =>
+  res.json(await readAudit({ target: String(req.query.target || ""), limit: Number(req.query.limit || 200) }))
+);
+
+/* ── заказ: правка, заметки, отправка, ссылка на оплату ── */
+
+/** Отменённый или удалённый заказ возвращает предметы на витрину. */
+const freeOrderItems = (order) =>
+  order?.items?.length ? releaseItems(order.items.map((i) => i.id)) : Promise.resolve();
+
+app.patch("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
+  const b = req.body || {};
+  const text = (v, max = 300) => String(v ?? "").trim().slice(0, max);
+  const out = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.order === req.params.num);
+    if (!o) return null;
+    const before = { name: o.name, contact: o.contact, email: o.email, address: o.address, delivery: o.delivery };
+    if (b.name !== undefined) o.name = text(b.name, 120);
+    if (b.contact !== undefined) o.contact = text(b.contact, 60);
+    if (b.email !== undefined) o.email = text(b.email, 120);
+    if (b.address !== undefined) o.address = text(b.address);
+    if (b.comment !== undefined) o.comment = text(b.comment, 1000);
+    if (b.delivery === "pickup" || b.delivery === "courier") o.delivery = b.delivery;
+    o.editedAt = new Date().toISOString();
+    return { order: { ...o }, before };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  logAction(req, "order.edit", `order:${req.params.num}`, out.before, {
+    name: out.order.name, contact: out.order.contact, email: out.order.email,
+    address: out.order.address, delivery: out.order.delivery,
+  });
+  res.json(out.order);
+});
+
+/** Короткие заметки по заказу — только для площадки. */
+app.post("/api/admin/orders/:num/notes", auth, adminOnly, async (req, res) => {
+  const text = String(req.body?.text || "").trim().slice(0, 1000);
+  if (!text) return res.status(400).json({ error: "Пустая заметка" });
+  const out = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.order === req.params.num);
+    if (!o) return null;
+    o.notes = [...(o.notes || []), { at: new Date().toISOString(), by: req.actor.name, text }];
+    return { ...o };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  logAction(req, "order.note", `order:${req.params.num}`, undefined, text.slice(0, 80));
+  res.json(out);
+});
+
+/** Перевозчик и трек-номер: покупатель спрашивает «где заказ». */
+app.post("/api/admin/orders/:num/shipping", auth, adminOnly, async (req, res) => {
+  const b = req.body || {};
+  const out = await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.order === req.params.num);
+    if (!o) return null;
+    o.shipping = {
+      carrier: String(b.carrier || "").trim().slice(0, 40),
+      tracking: String(b.tracking || "").trim().slice(0, 60),
+      url: String(b.url || "").trim().slice(0, 300),
+    };
+    if (b.shipped === true) o.shippedAt = o.shippedAt || new Date().toISOString();
+    if (b.shipped === false) delete o.shippedAt;
+    return { ...o };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  logAction(req, "order.shipping", `order:${req.params.num}`, undefined, out.shipping);
+  res.json(out);
+});
+
+/** Новая ссылка на оплату для заказа, который ещё не оплачен. */
+app.post("/api/admin/orders/:num/pay-link", auth, adminOnly, async (req, res) => {
+  try {
+    const order = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
+    if (!order) return res.status(404).json({ error: "not found" });
+    if (order.status === "paid" || order.status === "done")
+      return res.status(400).json({ error: "Заказ уже оплачен" });
+
+    /* Товары могли уйти другому покупателю, пока заказ висел */
+    const catalog = await loadProducts();
+    const gone = order.items.filter((i) => {
+      const p = catalog.find((x) => x.id === i.id);
+      return !p || p.sold || reservedByOther(p, order.id);
+    });
+    if (gone.length)
+      return res.status(409).json({ error: `Позиции уже недоступны: ${gone.map((g) => "№" + g.n).join(", ")}` });
+
+    const url = await stripeSession(order);
+    if (!url) return res.status(400).json({ error: "Stripe не настроен" });
+    await reserveItems(order.items.map((i) => i.id), order.id);
+    await updateJson(ORDERS, [], (list) => {
+      const o = list.find((x) => x.order === req.params.num);
+      if (o) { o.session = order.session; o.status = "new"; }
+    });
+    logAction(req, "order.paylink", `order:${req.params.num}`);
+    res.json({ url, expiresIn: RESERVE_MIN() });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+/** Оплата мимо Stripe — наличными или переводом. */
+app.post("/api/admin/orders/:num/mark-paid", auth, adminOnly, async (req, res) => {
+  const method = ["cash", "transfer", "other"].includes(req.body?.method) ? req.body.method : "other";
+  const order = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
+  if (!order) return res.status(404).json({ error: "not found" });
+  await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.order === req.params.num);
+    if (!o) return;
+    o.paymentMethod = method;
+    o.paidOutside = true;
+  });
+  const changed = await markPaid({ order: req.params.num }, {});
+  logAction(req, "order.markPaid", `order:${req.params.num}`, undefined, method);
+  res.json(changed || { ok: true });
 });
 
 app.delete("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
   const list = await readJson(ORDERS, []);
+  const order = list.find((o) => o.order === req.params.num);
   await writeJson(ORDERS, list.filter((o) => o.order !== req.params.num));
+  await freeOrderItems(order);
+  logAction(req, "order.delete", `order:${req.params.num}`, order?.total, undefined);
   res.json({ ok: true });
 });
 
@@ -1153,14 +1403,23 @@ app.post("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
   const out = await updateJson(ORDERS, [], (list) => {
     const o = list.find((x) => x.order === req.params.num);
     if (!o) return null;
+    const was = o.status;
     if (req.body?.status) o.status = String(req.body.status);
-    /* Передача товара покупателю запускает отсчёт 14 дней до выплаты */
+    /* Передача товара покупателю запускает отсчёт дней до выплаты */
     if (req.body?.delivered === true) o.deliveredAt = o.deliveredAt || new Date().toISOString();
     if (req.body?.delivered === false) delete o.deliveredAt;
-    return { ...o, releaseAt: releaseDate(o.deliveredAt), payoutState: payoutState(o) };
+    return { order: { ...o, releaseAt: releaseDate(o.deliveredAt), payoutState: payoutState(o) }, was };
   });
   if (!out) return res.status(404).json({ error: "not found" });
-  res.json(out);
+
+  /* Отменённый заказ отпускает товары обратно на витрину */
+  const o = out.order;
+  if ((o.status === "cancelled" || o.status === "expired") && out.was !== o.status) await freeOrderItems(o);
+  if (req.body?.status && out.was !== o.status)
+    logAction(req, "order.status", `order:${o.order}`, out.was, o.status);
+  if (req.body?.delivered !== undefined)
+    logAction(req, "order.delivered", `order:${o.order}`, undefined, o.deliveredAt || null);
+  res.json(o);
 });
 
 /** Возврат покупателю. При товаре партнёра возвращаем и свою комиссию. */
@@ -1185,10 +1444,14 @@ app.post("/api/admin/orders/:num/refund", auth, adminOnly, async (req, res) => {
       if (!o) return null;
       o.refundedCents = (o.refundedCents || 0) + (r.amount || 0);
       o.refundedAt = new Date().toISOString();
+      o.refunds = [...(o.refunds || []), { at: o.refundedAt, id: r.id, amount: r.amount, reason: req.body?.reason || "" }];
       o.refundId = r.id;
       if (o.refundedCents >= (o.chargeCents || 0)) o.status = "cancelled";
       return { ...o };
     });
+    /* Полный возврат снимает продажу: предмет снова доступен покупателям */
+    if (req.body?.restock !== false && out.refundedCents >= (out.chargeCents || 0)) await freeOrderItems(out);
+    logAction(req, "order.refund", `order:${req.params.num}`, undefined, { amount: r.amount, id: r.id });
     res.json({ refund: { id: r.id, amount: r.amount, status: r.status }, order: out });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
@@ -1209,7 +1472,7 @@ app.post("/api/admin/login", async (req, res) => {
       token: makeToken("seller", seller.id),
       role: "seller",
       name: seller.name,
-      commission: Number(seller.commission ?? COMMISSION),
+      commission: Number(seller.commission ?? COMMISSION()),
     });
   res.status(401).json({ error: "Неверный логин или пароль" });
 });
@@ -1225,7 +1488,7 @@ app.get("/api/admin/sellers", auth, adminOnly, async (_req, res) => {
       login: s.login,
       name: s.name,
       contact: s.contact || "",
-      commission: Number(s.commission ?? COMMISSION),
+      commission: Number(s.commission ?? COMMISSION()),
       active: s.active !== false,
       createdAt: s.createdAt,
       products: products.filter((p) => p.sellerId === s.id).length,
@@ -1307,7 +1570,7 @@ app.get("/api/admin/payouts", auth, adminOnly, async (_req, res) => {
       orders: orders.filter((o) => o.state === "available" || o.state === "held" || o.state === "disputed"),
     });
   }
-  res.json({ holdDays: HOLD_DAYS, rows });
+  res.json({ holdDays: holdDays(), rows });
 });
 
 app.post("/api/admin/payouts/:id", auth, adminOnly, async (req, res) => {
@@ -1384,7 +1647,7 @@ app.post("/api/admin/sellers", auth, adminOnly, async (req, res) => {
     login,
     name: String(b.name).trim(),
     contact: String(b.contact || "").trim(),
-    commission: Math.max(0, Math.min(90, Number(b.commission ?? COMMISSION))),
+    commission: Math.max(0, Math.min(90, Number(b.commission ?? COMMISSION()))),
     active: b.active !== false,
     status: base.status || "draft",
   };
@@ -1474,7 +1737,7 @@ app.get("/api/admin/stats", auth, async (req, res) => {
     if (ok) paidOrders++;
     for (const it of o.items || []) {
       const sid = it.sellerId || null;
-      const rate = sid ? Number(sellers.find((x) => x.id === sid)?.commission ?? COMMISSION) : 0;
+      const rate = sid ? Number(sellers.find((x) => x.id === sid)?.commission ?? COMMISSION()) : 0;
       const sp = split(it.price || 0, rate);
       const r = row(sid);
       if (ok) {
@@ -1493,7 +1756,7 @@ app.get("/api/admin/stats", auth, async (req, res) => {
   for (const s of sellers) {
     const r = row(s.id);
     r.name = s.name;
-    r.commission = Number(s.commission ?? COMMISSION);
+    r.commission = Number(s.commission ?? COMMISSION());
     r.products = products.filter((p) => p.sellerId === s.id).length;
   }
   const shop = rows.get(null);
@@ -1526,6 +1789,127 @@ app.get("/api/admin/stats", auth, async (req, res) => {
 app.get("/api/admin/products", auth, async (req, res) => {
   const list = await loadProducts();
   res.json(req.actor.role === "admin" ? list : list.filter((p) => p.sellerId === req.actor.id));
+});
+
+/* ── товары: видимость, архив, массовые операции ── */
+
+/** Своё — админу, чужое — нельзя: одна проверка на все операции. */
+const ownsProduct = (actor, p) => actor.role === "admin" || p?.sellerId === actor.id;
+
+app.post("/api/admin/products/:id/state", auth, async (req, res) => {
+  const id = Number(req.params.id);
+  const b = req.body || {};
+  const out = await updateJson(STORE, [], (list) => {
+    const p = list.find((x) => x.id === id);
+    if (!p) return null;
+    if (!ownsProduct(req.actor, p)) return { forbidden: true };
+    const before = { sold: Boolean(p.sold), hidden: Boolean(p.hidden), archived: Boolean(p.archived) };
+    if (b.sold !== undefined) p.sold = Boolean(b.sold);
+    if (b.hidden !== undefined) p.hidden = Boolean(b.hidden);
+    if (b.archived !== undefined) {
+      p.archived = Boolean(b.archived);
+      if (p.archived) p.archivedAt = new Date().toISOString();
+      else delete p.archivedAt;
+    }
+    /* Снятие резерва вручную: заказ отменился, а предмет остался занят */
+    if (b.release) {
+      delete p.reservedBy;
+      delete p.reservedUntil;
+    }
+    return { before, product: { ...p } };
+  });
+  if (!out) return res.status(404).json({ error: "not found" });
+  if (out.forbidden) return res.status(403).json({ error: "Это товар другого продавца" });
+  logAction(req, "product.state", `product:${id}`, out.before, {
+    sold: out.product.sold, hidden: out.product.hidden, archived: out.product.archived,
+  });
+  res.json(out.product);
+});
+
+/** Одно действие сразу над пачкой отмеченных карточек. */
+app.post("/api/admin/products/bulk", auth, async (req, res) => {
+  const ids = (Array.isArray(req.body?.ids) ? req.body.ids : []).map(Number).filter(Boolean);
+  const action = String(req.body?.action || "");
+  const value = req.body?.value;
+  if (!ids.length) return res.status(400).json({ error: "Ничего не выбрано" });
+
+  const out = await updateJson(STORE, [], (list) => {
+    let done = 0;
+    let denied = 0;
+    for (const p of list) {
+      if (!ids.includes(p.id)) continue;
+      if (!ownsProduct(req.actor, p)) { denied++; continue; }
+      if (action === "sold") p.sold = Boolean(value);
+      else if (action === "hidden") p.hidden = Boolean(value);
+      else if (action === "archive") { p.archived = true; p.archivedAt = new Date().toISOString(); }
+      else if (action === "restore") { p.archived = false; delete p.archivedAt; }
+      else if (action === "cat" && value) p.cat = String(value);
+      else if (action === "seller" && req.actor.role === "admin") p.sellerId = value || null;
+      else continue;
+      done++;
+    }
+    return { done, denied };
+  });
+  logAction(req, `product.bulk.${action}`, `products:${ids.length}`, undefined, String(value ?? ""));
+  res.json(out);
+});
+
+/* ── выгрузка для бухгалтерии ── */
+const csvCell = (v) => {
+  const s = String(v ?? "");
+  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+app.get("/api/admin/export/orders.csv", auth, adminOnly, async (req, res) => {
+  const [orders, sellers] = await Promise.all([readJson(ORDERS, []), loadSellers()]);
+  const from = req.query.from ? Date.parse(String(req.query.from)) : 0;
+  const to = req.query.to ? Date.parse(String(req.query.to)) + 864e5 : Infinity;
+  const money = (c) => (Math.round(c || 0) / 100).toFixed(2).replace(".", ",");
+
+  const head = [
+    "Дата", "Заказ", "Статус", "Покупатель", "Почта", "Телефон", "Получение", "Адрес",
+    "Продавец", "№ товара", "Название", "Цена товара", "Доставка", "Итого заказа",
+    "Комиссия площадки", "Комиссия Stripe", "К выплате партнёру", "Возвращено",
+    "Передан", "Выплачен", "PaymentIntent",
+  ];
+  const rows = [head.map(csvCell).join(";")];
+  for (const o of orders) {
+    const at = Date.parse(o.at || "");
+    if (!(at >= from && at <= to)) continue;
+    const seller = o.sellerId ? sellers.find((s) => s.id === o.sellerId) : null;
+    const items = o.items || [];
+    items.forEach((it, i) => {
+      rows.push(
+        [
+          new Date(o.at).toLocaleString("lv-LV"),
+          o.order,
+          o.status || "new",
+          o.name, o.email, o.contact,
+          o.delivery === "courier" ? "Piegāde" : "Talsi",
+          o.address || "",
+          seller ? seller.company?.name || seller.name : "SOFA.LV",
+          it.n || "",
+          it.title || "",
+          money(it.cents ?? toCents(it.price)),
+          i === 0 ? money(o.shippingCents) : "",
+          i === 0 ? money(o.chargeCents) : "",
+          i === 0 ? money(o.commissionCents) : "",
+          i === 0 ? money(o.stripeFeeCents || o.stripeFeeEstimateCents) : "",
+          i === 0 ? money(o.partnerNetCents) : "",
+          i === 0 ? money(o.refundedCents) : "",
+          i === 0 ? (o.deliveredAt ? new Date(o.deliveredAt).toLocaleDateString("lv-LV") : "") : "",
+          i === 0 ? (o.payoutAt ? new Date(o.payoutAt).toLocaleDateString("lv-LV") : "") : "",
+          i === 0 ? o.paymentIntent || "" : "",
+        ].map(csvCell).join(";")
+      );
+    });
+  }
+  const name = `sofa-orders-${new Date().toISOString().slice(0, 10)}.csv`;
+  res
+    .type("text/csv; charset=utf-8")
+    .set("Content-Disposition", `attachment; filename="${name}"`)
+    /* BOM — иначе Excel открывает кириллицу и диакритику крякозябрами */
+    .send("\uFEFF" + rows.join("\r\n"));
 });
 
 app.post("/api/admin/import", auth, adminOnly, async (req, res) => {
@@ -1561,7 +1945,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
   let translateError = "";
   const from = pickSource(p.tr);
   const missing = ["lv", "en", "ru"].filter((l) => !(p.tr?.[l]?.title || "").trim());
-  if (from && missing.length && process.env.DEEPSEEK_API_KEY) {
+  if (from && missing.length && settings.get("deepseekKey")) {
     try {
       const done = await translateCard(p.tr[from], from);
       for (const l of missing) p.tr[l] = { ...done[l] };
@@ -1585,7 +1969,11 @@ app.post("/api/admin/products", auth, async (req, res) => {
   const nextN = String(
     list.reduce((m, x) => Math.max(m, Number(x.n) || 0), 0) + 1
   ).padStart(2, "0");
+  const prev = idx >= 0 ? list[idx] : null;
   const clean = {
+    ...(prev ? { reservedBy: prev.reservedBy, reservedUntil: prev.reservedUntil } : {}),
+    hidden: p.hidden !== undefined ? Boolean(p.hidden) : Boolean(prev?.hidden),
+    archived: Boolean(prev?.archived),
     id: Number(p.id),
     createdAt: p.createdAt || list[idx]?.createdAt || new Date().toISOString(),
     n: p.n || nextN,
