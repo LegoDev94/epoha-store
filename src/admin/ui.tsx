@@ -196,6 +196,27 @@ export const Hint = ({ text }: { text: string }) => (
 );
 
 /* ── мелкие помощники ──────────────────────────────────────────── */
+
+/**
+ * Скачивание файла из панели. Обычная ссылка не годится: сервер ждёт
+ * токен в заголовке, а браузер его не пошлёт — вернётся 401.
+ */
+export async function download(url: string, filename: string) {
+  const res = await fetch(url, { headers: { "x-token": localStorage.getItem("epoha-token") || "" } });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `HTTP ${res.status}`);
+  }
+  const blob = await res.blob();
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
 export const copy = async (text: string) => {
   try {
     await navigator.clipboard.writeText(text);

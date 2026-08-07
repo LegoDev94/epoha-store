@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Select } from "../ui/Select";
 import { useFmt, useT, type AdminT } from "./lang";
-import { Empty, ErrorBox, Hint, Skeletons, copy, useConfirmDialog, useToast } from "./ui";
+import { Empty, ErrorBox, Hint, Skeletons, copy, download, useConfirmDialog, useToast } from "./ui";
 
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
@@ -133,14 +133,7 @@ export default function Orders({
      поэтому качаем через fetch, а не обычной ссылкой. */
   const exportCsv = async () => {
     try {
-      const res = await fetch("api/admin/export/orders.csv", { headers: { "x-token": localStorage.getItem("epoha-token") || "" } });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const blob = await res.blob();
-      const a = document.createElement("a");
-      a.href = URL.createObjectURL(blob);
-      a.download = `sofa-orders-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(a.href);
+      await download("api/admin/export/orders.csv", `sofa-orders-${new Date().toISOString().slice(0, 10)}.csv`);
       toast.ok(t("o.fajlVygruzhenOtkryvaetsya"));
     } catch (e) {
       toast.err(t("ord.csvFail"), String((e as Error).message));

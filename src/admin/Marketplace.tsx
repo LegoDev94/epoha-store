@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { makeT, type T } from "../i18n";
 import { useT } from "./lang";
+import { download, useToast } from "./ui";
 
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
@@ -257,6 +258,7 @@ function TermsStep({ me, t, api, onDone }: { me: Partner; t: T; api: Api; onDone
 
 /* ── шаг 3: Stripe ── */
 function StripeStep({ me, t, api, onSync }: { me: Partner; t: T; api: Api; onSync: () => void }) {
+  const { t: tt } = useT();
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   const due = me.stripe?.currentlyDue || [];
@@ -296,7 +298,7 @@ function StripeStep({ me, t, api, onSync }: { me: Partner; t: T; api: Api; onSyn
         <button className="adm-btn" onClick={start} disabled={busy}>
           {busy ? "…" : me.stripe?.accountId ? t("partner.status.stripeRequired.action") : t("partner.stripe.button")}
         </button>
-        <button className="adm-btn adm-ghost" onClick={onSync}>Pārbaudīt statusu</button>
+        <button className="adm-btn adm-ghost" onClick={onSync}>{tt("m.proveritStatus")}</button>
       </div>
     </div>
   );
@@ -311,6 +313,8 @@ interface PayoutRow {
 }
 
 function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void }) {
+  const toast = useToast();
+  const { t: tt } = useT();
   const [data, setData] = useState<{ buckets: Record<string, number>; rows: PayoutRow[]; balance: any; holdDays: number } | null>(null);
   useEffect(() => {
     api("api/partner/payouts").then(setData).catch(() => {});
@@ -343,7 +347,16 @@ function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void 
         </div>
         <div className="mp-head-side">
           <button className="adm-btn adm-ghost" onClick={openStripe}>Stripe →</button>
-          <a className="adm-btn adm-ghost" href="api/partner/terms.pdf">PDF</a>
+          <button
+            className="adm-btn adm-ghost"
+            onClick={() =>
+              download("api/partner/terms.pdf", "sofa-lv-noteikumi.pdf").catch((e) =>
+                toast.err(t("m.pdfNeSkachalsya"), String(e.message))
+              )
+            }
+          >
+            PDF
+          </button>
         </div>
       </header>
 
@@ -356,7 +369,7 @@ function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void 
         ))}
         {data?.balance && !data.balance.error && (
           <div className="mp-money mp-money-bal">
-            <span>Stripe: pieejams / apstrādē</span>
+            <span>{tt("m.stripeDostupnoObrabotka")}</span>
             <b>{money(data.balance.available)} / {money(data.balance.pending)}</b>
           </div>
         )}
@@ -365,8 +378,8 @@ function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void 
       <table className="mp-table">
         <thead>
           <tr>
-            <th>Pasūtījums</th><th>Prece</th><th>Summa</th><th>Komisija</th>
-            <th>Jums</th><th>Nodots</th><th>Izmaksa</th>
+            <th>{tt("m.thZakaz")}</th><th>{tt("m.thTovar")}</th><th>{tt("m.thSumma")}</th><th>{tt("m.thKomissiya")}</th>
+            <th>{tt("m.thVam")}</th><th>{tt("m.thPeredan")}</th><th>{tt("m.thVyplata")}</th>
           </tr>
         </thead>
         <tbody>
@@ -387,8 +400,8 @@ function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void 
           ))}
         </tbody>
       </table>
-      {!data?.rows?.length && <p className="adm-hint">Vēl nav pārdošanas darījumu.</p>}
-      <button className="adm-btn adm-ghost" onClick={onSync}>Atjaunot</button>
+      {!data?.rows?.length && <p className="adm-hint">{tt("m.poka NetProdazh".replace(" ", ""))}</p>}
+      <button className="adm-btn adm-ghost" onClick={onSync}>{tt("m.obnovit")}</button>
     </section>
   );
 }
@@ -412,6 +425,7 @@ export function PayoutBadge({ state, t, releaseAt }: { state: string; t: T; rele
 /* ═══ администрирование партнёров ═══ */
 export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => void }) {
   const { t } = useT();
+  const toast = useToast();
   const [list, setList] = useState<Partner[]>([]);
   const [busy, setBusy] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -487,9 +501,16 @@ export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => v
                     <p className="adm-hint">{t("m.nePrinyat")}</p>
                   )}
                   {p.terms && (
-                    <a className="adm-btn adm-ghost" href={`api/admin/sellers/${p.id}/terms.pdf`} target="_blank" rel="noopener noreferrer">
-                      Скачать PDF
-                    </a>
+                    <button
+                      className="adm-btn adm-ghost"
+                      onClick={() =>
+                        download(`api/admin/sellers/${p.id}/terms.pdf`, `sofa-lv-${p.id}-noteikumi.pdf`).catch((e) =>
+                          toast.err(t("m.pdfNeSkachalsya"), String(e.message))
+                        )
+                      }
+                    >
+                      {t("m.skachatPdf")}
+                    </button>
                   )}
 
                   <h4>Stripe</h4>
