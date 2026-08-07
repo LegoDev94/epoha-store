@@ -1107,7 +1107,12 @@ app.get("/api/partner/terms.pdf", authDownload, sellerSelf, async (req, res) => 
 app.get("/api/admin/sellers/:id/terms.pdf", authDownload, adminOnly, async (req, res) => {
   try {
     const { pdf } = await termsPdf(req.params.id);
-    res.type("application/pdf").send(pdf);
+    /* Без этого заголовка браузер откроет файл вместо скачивания и уведёт
+       владельца со страницы панели. */
+    res
+      .type("application/pdf")
+      .set("Content-Disposition", `attachment; filename="sofa-lv-${req.params.id}-noteikumi.pdf"`)
+      .send(pdf);
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
