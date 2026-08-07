@@ -9,8 +9,10 @@ import { useToast } from "./ui";
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
 interface Field { value?: string | number; set?: boolean; origin: "panel" | "env" | "default" }
+interface ConnectBlock { at: string; mode: string; admin: string; raw: string }
 interface Health {
   mode: "live" | "test";
+  connectBlock?: ConnectBlock | null;
   stripe: boolean; stripeWebhook: boolean; connectWebhook: boolean;
   telegram: boolean; email: boolean; translate: boolean;
 }
@@ -67,6 +69,25 @@ export default function Settings({ api }: { api: Api }) {
       toast.ok(next === "test" ? t("s.vklyuchenaPesochnica") : t("s.vklyuchenBoevoj"));
     } catch (e) {
       toast.err(t("ui.saveFail"), String((e as Error).message));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  /* Проверка Connect: заводим и тут же удаляем пробный счёт партнёра */
+  const checkConnect = async () => {
+    setBusy("connect");
+    try {
+      const r = await api("api/admin/connect/check", { method: "POST" });
+      if (r.ready) {
+        toast.ok(t("s.connectGotov"));
+        setHealth((h) => (h ? { ...h, connectBlock: null } : h));
+      } else {
+        toast.err(t("s.connectNeGotov"), r.admin);
+        setHealth((h) => (h ? { ...h, connectBlock: { at: new Date().toISOString(), mode: r.mode, admin: r.admin, raw: r.raw } } : h));
+      }
+    } catch (e) {
+      toast.err(t("ui.error"), String((e as Error).message));
     } finally {
       setBusy("");
     }
@@ -189,6 +210,26 @@ export default function Settings({ api }: { api: Api }) {
               {health?.mode === "test" ? t("s.pesochnicaOpisanie") : t("s.boevojOpisanie")}
             </p>
           </div>
+          {health?.connectBlock && (
+            <div className="mp-note mp-note-warn set-block">
+              <b>{t("s.connectNeAktiviro")}</b>
+              <p>{health.connectBlock.admin}</p>
+              <p className="set-raw">Stripe: {health.connectBlock.raw}</p>
+              <div className="mp-btns">
+                <a className="adm-btn adm-btn-sm" href="https://dashboard.stripe.com/connect/accounts/overview" target="_blank" rel="noopener noreferrer">
+                  {t("s.otkrytStripe")}
+                </a>
+                <button className="adm-btn adm-btn-sm adm-ghost" onClick={checkConnect} disabled={busy === "connect"}>
+                  {busy === "connect" ? "…" : t("s.proveritConnect")}
+                </button>
+              </div>
+            </div>
+          )}
+          {!health?.connectBlock && (
+            <button className="adm-btn adm-btn-sm adm-ghost" onClick={checkConnect} disabled={busy === "connect"}>
+              {busy === "connect" ? "…" : t("s.proveritConnect")}
+            </button>
+          )}
           {secret("stripeTestSecret", t("s.testovyjKlyuch"), t("s.testovyjKlyuchGde"))}
           {secret("stripeTestWebhook", t("s.testovyjVebhuk"), t("s.testovyjVebhukGde"))}
           {secret("stripeTestConnectWebhook", t("s.testovyjVebhukConnect"), t("s.testovyjVebhukConnectGde"))}

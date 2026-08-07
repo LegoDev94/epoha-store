@@ -1109,3 +1109,5 @@
 .set-mode .seg { width: 100%; }
 .set-mode .seg button { flex: 1; padding: 11px 14px; font-size: 13.5px; }
 .set-mode-test .seg button.on { background: #8a6a12; }
+.set-block { margin-bottom: 14px; }
+.set-raw { font-size: 11.5px; color: var(--a-dim); font-family: ui-monospace, monospace; }

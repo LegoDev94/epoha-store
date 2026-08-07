@@ -928,6 +928,10 @@ function webhookRoute(path_, which) {
 webhookRoute("/api/stripe/webhook", "platform");
 webhookRoute("/api/stripe/webhook/connect", "connect");
 
+/* Последний отказ Stripe Connect: партнёру показываем мягко, владельцу —
+   с точной инструкцией, что нажать в дашборде. */
+let connectBlock = null;
+
 /* ── кабинет партнёра ─────────────────────────────────────────────
    Партнёр проходит четыре шага: анкета → договор → Stripe → проверка. */
 
@@ -1118,7 +1122,10 @@ app.post("/api/partner/stripe/link", auth, sellerSelf, async (req, res) => {
   } catch (e) {
     /* Партнёру — человеческое объяснение, в журнал — что делать владельцу */
     const said = connect.explain(e);
-    if (said.admin !== said.partner) console.warn("[sofa] Stripe Connect:", said.admin);
+    if (said.admin !== said.partner) {
+      connectBlock = { at: new Date().toISOString(), mode: settings.mode(), admin: said.admin, raw: String(e.message || e) };
+      console.warn("[sofa] Stripe Connect:", said.admin);
+    }
     res.status(400).json({ error: said.partner, admin: said.admin });
   }
 });
@@ -1269,7 +1276,32 @@ app.post("/api/admin/settings", auth, adminOnly, async (req, res) => {
   }
 });
 
-app.get("/api/admin/health", auth, adminOnly, (_req, res) => res.json(settings.health()));
+app.get("/api/admin/health", auth, adminOnly, (_req, res) =>
+  res.json({
+    ...settings.health(),
+    /* Отказ считаем актуальным, пока режим не сменили */
+    connectBlock: connectBlock && connectBlock.mode === settings.mode() ? connectBlock : null,
+  })
+);
+
+/** Проверка Connect по кнопке: создаём и сразу удаляем пробный счёт. */
+app.post("/api/admin/connect/check", auth, adminOnly, async (_req, res) => {
+  if (!connect.hasStripe())
+    return res.json({ ready: false, admin: "Ключ Stripe для текущего режима не задан" });
+  try {
+    const acct = await connect.createAccount(
+      { id: "check", name: "SOFA.LV check", company: { name: "SOFA.LV check", email: "connect-check@sofa.lv" } },
+      { site: BASE_URL }
+    );
+    await connect.deleteAccount(acct.id).catch(() => {});
+    connectBlock = null;
+    res.json({ ready: true, mode: settings.mode() });
+  } catch (e) {
+    const said = connect.explain(e);
+    connectBlock = { at: new Date().toISOString(), mode: settings.mode(), admin: said.admin, raw: String(e.message || e) };
+    res.json({ ready: false, admin: said.admin, raw: connectBlock.raw, mode: settings.mode() });
+  }
+});
 
 /** Проверка канала уведомлений: отправляем себе тестовое сообщение. */
 app.post("/api/admin/settings/test-notify", auth, adminOnly, async (req, res) => {
