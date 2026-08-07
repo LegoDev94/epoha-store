@@ -3,8 +3,9 @@ import type { Category, Lang, Lot } from "../data/catalog";
 import { Select } from "../ui/Select";
 import { AdminPartners, AdminPayouts, PartnerCabinet } from "./Marketplace";
 import Goods, { type AdmLot } from "./Goods";
-import Orders, { needsAction, type Order } from "./Orders";
+import Orders, { needsAction, statusLabel, type Order } from "./Orders";
 import Settings from "./Settings";
+import { LangProvider, LangSwitch, useFmt, useT } from "./lang";
 import { Toasts, ago, useToast } from "./ui";
 import "./admin.css";
 
@@ -12,27 +13,12 @@ import "./admin.css";
    Роли: администратор площадки (всё) и продавец (свои товары и продажи).
    Комиссия площадки удерживается с каждой проданной позиции. */
 
-const CATS: { v: Category; l: string }[] = [
-  { v: "seating", l: "Мягкая мебель" },
-  { v: "mirror", l: "Зеркала" },
-  { v: "light", l: "Свет" },
-  { v: "storage", l: "Комоды и хранение" },
-  { v: "table", l: "Столы" },
-  { v: "decor", l: "Декор и керамика" },
-];
+const CAT_KEYS: Category[] = ["seating", "mirror", "light", "storage", "table", "decor"];
 const LANGS: { v: Lang; l: string }[] = [
   { v: "lv", l: "Latviski" },
   { v: "en", l: "English" },
   { v: "ru", l: "Русский" },
 ];
-const STATUS: Record<string, string> = {
-  new: "новый",
-  paid: "оплачен",
-  done: "выполнен",
-  cancelled: "отменён",
-};
-const money = (n: number | undefined) =>
-  "€" + (Math.round((n || 0) * 100) / 100).toLocaleString("ru-RU");
 
 interface OrderItem {
   id: number;
@@ -144,7 +130,7 @@ function useApi(token: string, onExpired?: () => void) {
       /* Истёкший вход выглядел бы как «данных нет» — гасим сразу */
       if (res.status === 401) {
         expired.current?.();
-        throw new Error("Сессия истекла — войдите заново");
+        throw new Error("SESSION_EXPIRED");
       }
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || `HTTP ${res.status}`);
       return res.json();
@@ -154,7 +140,8 @@ function useApi(token: string, onExpired?: () => void) {
 }
 
 /* ── вход: администратор или продавец ── */
-function Login({ onIn }: { onIn: (t: string, me: Me) => void }) {
+function Login({ onIn }: { onIn: (token: string, me: Me) => void }) {
+  const { t } = useT();
   const [login, setLogin] = useState("");
   const [pw, setPw] = useState("");
   const [err, setErr] = useState("");
@@ -171,7 +158,7 @@ function Login({ onIn }: { onIn: (t: string, me: Me) => void }) {
         body: JSON.stringify({ login, password: pw }),
       });
       const data = await r.json();
-      if (!r.ok) throw new Error(data.error || "Неверный логин или пароль");
+      if (!r.ok) throw new Error(data.error || t("log.bad"));
       localStorage.setItem("epoha-token", data.token);
       onIn(data.token, { role: data.role, id: null, name: data.name, commission: data.commission ?? 20 });
     } catch (e) {
@@ -185,12 +172,12 @@ function Login({ onIn }: { onIn: (t: string, me: Me) => void }) {
     <div className="adm-login">
       <form onSubmit={submit}>
         <h1>VINTAGE MĒBELES</h1>
-        <p className="adm-login-sub">кабинет площадки и продавцов</p>
-        <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder="Логин" autoFocus />
-        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Пароль" />
+        <p className="adm-login-sub">{t("log.sub")}</p>
+        <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder={t("log.login")} autoFocus />
+        <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t("log.pw")} />
         {err && <p className="adm-err">{err}</p>}
-        <button className="adm-btn" disabled={busy}>{busy ? "Вход…" : "Войти"}</button>
-        <a href="#/" className="adm-back">← на витрину</a>
+        <button className="adm-btn" disabled={busy}>{busy ? t("log.busy") : t("log.in")}</button>
+        <a href="#/" className="adm-back">{t("log.back")}</a>
       </form>
     </div>
   );
@@ -217,6 +204,8 @@ function Editor({
   api: ReturnType<typeof useApi>;
 }) {
   const toast = useToast();
+  const { t } = useT();
+  const cats = useMemo(() => CAT_KEYS.map((v) => ({ v, l: t(`cat.${v}`) })), [t]);
   const [p, setP] = useState<Lot>(structuredClone(item));
   const [tab, setTab] = useState<Lang>(
     () => (["lv", "en", "ru"] as Lang[]).find((l) => item.tr[l]?.title.trim()) || "lv"
@@ -241,7 +230,7 @@ function Editor({
       });
       setP((s) => ({ ...s, tr: { ...s.tr, ...done, [tab]: s.tr[tab] } }));
     } catch (e) {
-      toast.err("Ошибка", String((e as Error).message));
+      toast.err(t("ui.error"), String((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -299,7 +288,7 @@ function Editor({
         setP((s) => ({ ...s, images: [...s.images, ...images] }));
       }
     } catch (e) {
-      toast.err("Ошибка", String((e as Error).message));
+      toast.err(t("ui.error"), String((e as Error).message));
     } finally {
       setBusy(false);
       setProgress("");
@@ -308,11 +297,11 @@ function Editor({
 
   const save = async (next = false) => {
     if (!p.tr.lv.title.trim() && !p.tr.en.title.trim() && !p.tr.ru.title.trim())
-      return toast.err("Заполните карточку хотя бы на одном языке");
+      return toast.err(t("a.zapolniteKartochkuHotya"));
     setBusy("save");
     try {
       const saved = await api("api/admin/products", { method: "POST", body: JSON.stringify(p) });
-      if (saved?.translateError) toast.err("Карточка сохранена, но перевод не сработал", saved.translateError);
+      if (saved?.translateError) toast.err(t("a.kartochkaSohranenaNo"), saved.translateError);
       else toast.ok(`№${saved.n} сохранён${next ? " · вводите следующий" : ""}`);
       if (next) {
         /* Конвейер: категория, продавец и эпоха остаются от предыдущей карточки */
@@ -328,7 +317,7 @@ function Editor({
         onSaved?.();
       } else onSave(saved);
     } catch (e) {
-      toast.err("Не сохранилось", String((e as Error).message));
+      toast.err(t("ui.saveFail"), String((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -338,7 +327,7 @@ function Editor({
     <div className="adm-modal-bg" onClick={onClose}>
       <div className="adm-modal" onClick={(e) => e.stopPropagation()}>
         <header className="adm-modal-head">
-          <h2>{item.id ? `Товар № ${item.n || item.id}` : "Новый товар"}</h2>
+          <h2>{item.id ? `Товар № ${item.n || item.id}` : t("ed.newItem")}</h2>
           <button className="adm-x" onClick={onClose}>✕</button>
         </header>
 
@@ -346,11 +335,11 @@ function Editor({
           {note && <p className="adm-note">{note}</p>}
           <div className="adm-grid">
             <label className="adm-f">
-              <span>Номер витрины</span>
+              <span>{t("ed.number")}</span>
               <input value={p.n} onChange={(e) => setP({ ...p, n: e.target.value })} placeholder="20" />
             </label>
             <label className="adm-f">
-              <span>Цена продажи, €</span>
+              <span>{t("ed.price")}</span>
               <input
                 type="number"
                 value={p.price || ""}
@@ -366,17 +355,17 @@ function Editor({
               )}
             </label>
             <label className="adm-f">
-              <span>Категория</span>
+              <span>{t("ed.cat")}</span>
               <Select
                 className="sel-sq sel-full"
                 value={p.cat}
                 onChange={(v) => setP({ ...p, cat: v as Category })}
-                options={CATS.map((c) => ({ value: c.v, label: c.l }))}
+                options={cats.map((c) => ({ value: c.v, label: c.l }))}
               />
             </label>
             <label className="adm-f adm-check">
               <input type="checkbox" checked={!!p.sold} onChange={(e) => setP({ ...p, sold: e.target.checked })} />
-              <span>{isAdmin ? "Продано" : "Pārdots"}</span>
+              <span>{isAdmin ? t("ed.sold") : "Pārdots"}</span>
             </label>
             <label className="adm-f adm-check">
               <input
@@ -384,7 +373,7 @@ function Editor({
                 checked={!!(p as Lot & { hidden?: boolean }).hidden}
                 onChange={(e) => setP({ ...p, hidden: e.target.checked } as Lot)}
               />
-              <span>{isAdmin ? "Скрыть с витрины" : "Paslēpt no skatloga"}</span>
+              <span>{isAdmin ? t("ed.hide") : "Paslēpt no skatloga"}</span>
             </label>
           </div>
 
@@ -394,13 +383,13 @@ function Editor({
                 <img src={im} alt="" />
                 <button
                   className="adm-img-x"
-                  title="Удалить фото"
+                  title={t("a.udalitFoto")}
                   onClick={() => setP({ ...p, images: p.images.filter((_, k) => k !== i) })}
                 >
                   ✕
                 </button>
                 {i === 0 ? (
-                  <b>обложка</b>
+                  <b>{t("a.oblozhka")}</b>
                 ) : (
                   <button
                     className="adm-img-cover"
@@ -434,12 +423,12 @@ function Editor({
               <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" strokeLinecap="round" />
             </svg>
             <b>{busy === "up" ? `Загружаем ${progress}…` : "Перетащите фото сюда или выберите файлы"}</b>
-            <i>JPG, PNG или WEBP · можно сразу несколько · большие снимки сожмём автоматически</i>
+            <i>{t("a.jpgPngIli")}</i>
             <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
           </div>
 
           <details className="adm-bylink">
-            <summary>…или добавить фото по прямой ссылке</summary>
+            <summary>{t("a.iliDobavitFoto")}</summary>
             <div className="adm-row">
               <input value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} placeholder="https://…/photo.jpg" />
               <button
@@ -450,9 +439,7 @@ function Editor({
                     setImgUrl("");
                   }
                 }}
-              >
-                Добавить
-              </button>
+              >{t("ed.add")}</button>
             </div>
           </details>
 
@@ -465,7 +452,7 @@ function Editor({
             ))}
             <div className="adm-copy">
               <button className="adm-tr" onClick={translate} disabled={!!busy}>
-                {busy === "tr" ? "Перевод…" : `✦ Перевести с ${tab.toUpperCase()} на остальные`}
+                {busy === "tr" ? t("ed.translating") : `✦ Перевести с ${tab.toUpperCase()} на остальные`}
               </button>
               {LANGS.filter((l) => l.v !== tab).map((l) => (
                 <button key={l.v} onClick={() => copyFrom(l.v)}>← копировать {l.v.toUpperCase()}</button>
@@ -478,15 +465,15 @@ function Editor({
             <input value={p.tr[tab].title} onChange={(e) => setTr(tab, "title", e.target.value)} />
           </label>
           <label className="adm-f">
-            <span>Эпоха / происхождение</span>
+            <span>{t("a.epohaProishozhdenie")}</span>
             <input
               value={p.tr[tab].era}
               onChange={(e) => setTr(tab, "era", e.target.value)}
-              placeholder={tab === "lv" ? "Zviedrija · 20. gs." : tab === "en" ? "Sweden · 20th century" : "Швеция · XX век"}
+              placeholder={tab === "lv" ? "Zviedrija · 20. gs." : tab === "en" ? "Sweden · 20th century" : t("a.shveciyaXxVek")}
             />
           </label>
           <label className="adm-f">
-            <span>Описание</span>
+            <span>{t("ed.desc")}</span>
             <textarea rows={5} value={p.tr[tab].desc} onChange={(e) => setTr(tab, "desc", e.target.value)} />
           </label>
 
@@ -498,15 +485,13 @@ function Editor({
         </div>
 
         <footer className="adm-modal-foot">
-          <span className="adm-foot-hint">Пустые языки заполнятся автоматически при сохранении</span>
-          <button className="adm-btn adm-ghost" onClick={onClose}>Отмена</button>
+          <span className="adm-foot-hint">{t("ed.autoHint")}</span>
+          <button className="adm-btn adm-ghost" onClick={onClose}>{t("ed.cancel")}</button>
           {!item.id && (
-            <button className="adm-btn adm-ghost" onClick={() => save(true)} disabled={!!busy}>
-              Сохранить и добавить ещё
-            </button>
+            <button className="adm-btn adm-ghost" onClick={() => save(true)} disabled={!!busy}>{t("ed.saveNext")}</button>
           )}
           <button className="adm-btn" onClick={() => save()} disabled={!!busy}>
-            {busy === "save" ? "Сохранение…" : "Сохранить"}
+            {busy === "save" ? t("ed.saving") : t("ed.save")}
           </button>
         </footer>
       </div>
@@ -537,15 +522,16 @@ function SellerForm({
   });
   const [busy, setBusy] = useState(false);
   const toast = useToast();
+  const { t } = useT();
 
   const save = async () => {
     setBusy(true);
     try {
       await api("api/admin/sellers", { method: "POST", body: JSON.stringify(f) });
-      toast.ok("Продавец сохранён");
+      toast.ok(t("sl.saved"));
       onSave();
     } catch (e) {
-      toast.err("Ошибка", String((e as Error).message));
+      toast.err(t("ui.error"), String((e as Error).message));
     } finally {
       setBusy(false);
     }
@@ -555,21 +541,21 @@ function SellerForm({
     <div className="adm-modal-bg" onClick={onClose}>
       <div className="adm-modal adm-modal-sm" onClick={(e) => e.stopPropagation()}>
         <header className="adm-modal-head">
-          <h2>{seller.id ? `Продавец: ${seller.name}` : "Новый продавец"}</h2>
+          <h2>{seller.id ? `Продавец: ${seller.name}` : t("sl.new")}</h2>
           <button className="adm-x" onClick={onClose}>✕</button>
         </header>
         <div className="adm-modal-body">
           <div className="adm-grid">
             <label className="adm-f">
-              <span>Имя / магазин</span>
+              <span>{t("sl.name")}</span>
               <input value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} placeholder="Anna Ozola" />
             </label>
             <label className="adm-f">
-              <span>Логин для входа</span>
+              <span>{t("sl.login")}</span>
               <input value={f.login} onChange={(e) => setF({ ...f, login: e.target.value })} placeholder="anna" />
             </label>
             <label className="adm-f">
-              <span>Комиссия площадки, %</span>
+              <span>{t("sl.commission")}</span>
               <input
                 type="number"
                 value={f.commission}
@@ -578,16 +564,16 @@ function SellerForm({
             </label>
             <label className="adm-f adm-check">
               <input type="checkbox" checked={f.active} onChange={(e) => setF({ ...f, active: e.target.checked })} />
-              <span>Доступ активен</span>
+              <span>{t("sl.active")}</span>
             </label>
           </div>
           <label className="adm-f">
-            <span>Контакт (телефон, почта)</span>
+            <span>{t("sl.contact")}</span>
             <input value={f.contact} onChange={(e) => setF({ ...f, contact: e.target.value })} placeholder="+371 20 000 000 · anna@mail.lv" />
           </label>
           <label className="adm-f">
-            <span>{seller.id ? "Новый пароль (пусто — не менять)" : "Пароль"}</span>
-            <input value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder="минимум 6 символов" />
+            <span>{seller.id ? t("a.novyjParolPusto") : t("log.pw")}</span>
+            <input value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} placeholder={t("a.minimum6Simvolov")} />
           </label>
           <p className="adm-hint">
             Продавец войдёт по этому логину и паролю на этой же странице и увидит только свои
@@ -595,9 +581,9 @@ function SellerForm({
           </p>
         </div>
         <footer className="adm-modal-foot">
-          <button className="adm-btn adm-ghost" onClick={onClose}>Отмена</button>
+          <button className="adm-btn adm-ghost" onClick={onClose}>{t("ed.cancel")}</button>
           <button className="adm-btn" onClick={save} disabled={busy}>
-            {busy ? "Сохранение…" : "Сохранить"}
+            {busy ? t("ed.saving") : t("ed.save")}
           </button>
         </footer>
       </div>
@@ -608,13 +594,18 @@ function SellerForm({
 /* ── панель ── */
 export default function AdminApp() {
   return (
-    <Toasts>
-      <Panel />
-    </Toasts>
+    <LangProvider>
+      <Toasts>
+        <Panel />
+      </Toasts>
+    </LangProvider>
   );
 }
 
 function Panel() {
+  const { t } = useT();
+  const { eur } = useFmt();
+  const CATS = useMemo(() => CAT_KEYS.map((v) => ({ v, l: t(`cat.${v}`) })), [t]);
   const [token, setToken] = useState(() => localStorage.getItem("epoha-token") || "");
   const [me, setMe] = useState<Me | null>(null);
   const toast = useToast();
@@ -719,7 +710,7 @@ function Panel() {
 
   const doImport = async () => {
     if (!url.trim()) return;
-    setBusy("Тянем данные со страницы…");
+    setBusy(t("a.tyanemDannyeSo"));
     try {
       const draft = await api("api/admin/import", { method: "POST", body: JSON.stringify({ url: url.trim() }) });
       const dup = items.find((i) => i.id === draft.id);
@@ -728,7 +719,7 @@ function Panel() {
       setEdit({ ...base, ...draft, price: draft.priceHint ? Math.round(draft.priceHint * 3) : 0, tr: draft.tr || base.tr });
       setUrl("");
     } catch (e) {
-      toast.err("Импорт не удался", String((e as Error).message));
+      toast.err(t("imp.fail"), String((e as Error).message));
     } finally {
       setBusy("");
     }
@@ -746,24 +737,22 @@ function Panel() {
       <header className="adm-top">
         <b>VINTAGE MĒBELES</b>
         <span className={`adm-role adm-role-${me.role}`}>
-          {isAdmin ? "площадка" : `продавец · ${me.name}`}
+          {isAdmin ? t("role.admin") : `продавец · ${me.name}`}
         </span>
         <nav>
           <button className={tab === "goods" ? "on" : ""} onClick={() => setTab("goods")}>
-            {isAdmin ? "Товары" : "Manas preces"} <i>{myItems.length}</i>
+            {isAdmin ? t("nav.goods") : "Manas preces"} <i>{myItems.length}</i>
           </button>
           <button className={tab === "orders" ? "on" : ""} onClick={() => setTab("orders")}>
-            {isAdmin ? "Заказы" : "Pārdevumi"} {todo > 0 && <i className="hot">{todo}</i>}
+            {isAdmin ? t("nav.orders") : "Pārdevumi"} {todo > 0 && <i className="hot">{todo}</i>}
           </button>
           {isAdmin && (
             <button className={tab === "sellers" ? "on" : ""} onClick={() => setTab("sellers")}>
-              Продавцы {sellers.some((s) => s.stage === "review") && <i className="hot">!</i>}
+              {t("nav.sellers")} {sellers.some((s) => s.stage === "review") && <i className="hot">!</i>}
             </button>
           )}
           {isAdmin && (
-            <button className={tab === "payouts" ? "on" : ""} onClick={() => setTab("payouts")}>
-              Выплаты
-            </button>
+            <button className={tab === "payouts" ? "on" : ""} onClick={() => setTab("payouts")}>{t("nav.payouts")}</button>
           )}
           {!isAdmin && (
             <button className={tab === "cabinet" ? "on" : ""} onClick={() => setTab("cabinet")}>
@@ -771,16 +760,15 @@ function Panel() {
             </button>
           )}
           <button className={tab === "stats" ? "on" : ""} onClick={() => setTab("stats")}>
-            {isAdmin ? "Статистика" : "Ieņēmumi"}
+            {isAdmin ? t("nav.stats") : "Ieņēmumi"}
           </button>
           {isAdmin && (
-            <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>
-              Настройки
-            </button>
+            <button className={tab === "settings" ? "on" : ""} onClick={() => setTab("settings")}>{t("nav.settings")}</button>
           )}
         </nav>
-        {freshAt && <span className="adm-fresh" title="Список обновляется сам каждые 30 секунд">{ago(freshAt)}</span>}
-        <a href="#/" className="adm-link">Витрина ↗</a>
+        {freshAt && <span className="adm-fresh" title={t("a.spisokObnovlyaetsyaSam")}>{ago(freshAt, t)}</span>}
+        <LangSwitch />
+        <a href="#/" className="adm-link">{t("nav.shop")}</a>
         <button
           className="adm-link"
           onClick={() => {
@@ -788,19 +776,17 @@ function Panel() {
             setToken("");
             setMe(null);
           }}
-        >
-          Выйти
-        </button>
+        >{t("nav.exit")}</button>
       </header>
 
       {tab === "goods" && (
         <>
           {isAdmin ? (
             <details className="adm-import adm-import-fold" open={window.innerWidth > 720}>
-              <summary>+ Добавить товар</summary>
+              <summary>{t("imp.add")}</summary>
               <div className="adm-import-main">
                 <label className="adm-f">
-                  <span>Импорт по ссылке — вставьте адрес товара с аукциона</span>
+                  <span>{t("imp.label")}</span>
                   <div className="adm-row">
                     <input
                       value={url}
@@ -809,7 +795,7 @@ function Panel() {
                       placeholder="https://auctionet.com/en/5212622-sofa-rococo-style"
                     />
                     <button className="adm-btn" onClick={doImport} disabled={!!busy}>
-                      {busy ? "…" : "Импортировать"}
+                      {busy ? "…" : t("imp.go")}
                     </button>
                   </div>
                 </label>
@@ -817,9 +803,7 @@ function Panel() {
                   Фото и описание подтянутся автоматически — вам останется поставить цену. {busy}
                 </p>
               </div>
-              <button className="adm-btn adm-ghost" onClick={() => { setNote(""); setEdit(empty()); }}>
-                + Добавить вручную
-              </button>
+              <button className="adm-btn adm-ghost" onClick={() => { setNote(""); setEdit(empty()); }}>{t("imp.manual")}</button>
             </details>
           ) : (
             <section className="adm-import">
@@ -860,7 +844,7 @@ function Panel() {
             onReload={() => { loadProducts(); loadStats(); }}
             onEdit={(p) => { setNote(""); setEdit(p as Lot); }}
             onDuplicate={(p) => {
-              setNote("Копия карточки: проверьте номер и цену перед сохранением.");
+              setNote(t("a.kopiyaKartochkiProverte"));
               setEdit({ ...(p as Lot), id: 0, n: "", sold: false, createdAt: undefined });
             }}
           />
@@ -885,13 +869,13 @@ function Panel() {
         <>
           <section className="adm-import">
             <div className="adm-import-main">
-              <b className="adm-sec-title">Продавцы площадки</b>
+              <b className="adm-sec-title">{t("sl.title")}</b>
               <p className="adm-hint">
                 Выдайте продавцу логин и пароль — он войдёт на этой же странице, будет вести свои
                 товары и видеть свои продажи. Комиссия площадки удерживается автоматически.
               </p>
             </div>
-            <button className="adm-btn" onClick={() => setSellerEdit({})}>+ Добавить продавца</button>
+            <button className="adm-btn" onClick={() => setSellerEdit({})}>{t("sl.add")}</button>
           </section>
 
           <AdminPartners api={api} onChanged={() => { loadSellers(); loadStats(); }} />
@@ -900,13 +884,13 @@ function Panel() {
             {sellers.map((s) => (
               <article className="adm-card adm-seller" key={s.id}>
                 <div className="adm-card-main">
-                  <b>{s.name} {!s.active && <span className="adm-sold">доступ выключен</span>}</b>
+                  <b>{s.name} {!s.active && <span className="adm-sold">{t("sl.off")}</span>}</b>
                   <span>логин: {s.login} · комиссия {s.commission}% · товаров: {s.products ?? 0}</span>
                 </div>
                 <div className="adm-card-right">
                   <div>
-                    <button className="adm-btn adm-btn-sm" onClick={() => setSellerEdit(s)}>Доступ</button>
-                    <button className="adm-btn adm-btn-sm adm-danger" onClick={() => removeSeller(s)}>Удалить</button>
+                    <button className="adm-btn adm-btn-sm" onClick={() => setSellerEdit(s)}>{t("sl.access")}</button>
+                    <button className="adm-btn adm-btn-sm adm-danger" onClick={() => removeSeller(s)}>{t("sl.delete")}</button>
                   </div>
                 </div>
               </article>
@@ -927,24 +911,24 @@ function Panel() {
             <>
               <div className="adm-cards">
                 <div className="adm-stat">
-                  <i>Оборот оплаченных</i><b>{money(stats.totals.gross)}</b>
+                  <i>{t("stt.gross")}</i><b>{eur(stats.totals.gross)}</b>
                   <u>{stats.totals.paidOrders} из {stats.totals.orders} заказов</u>
                 </div>
                 <div className="adm-stat adm-stat-key">
-                  <i>Наша комиссия</i><b>{money(stats.totals.fee)}</b><u>удержано с продавцов</u>
+                  <i>{t("stt.fee")}</i><b>{eur(stats.totals.fee)}</b><u>{t("stt.feeHint")}</u>
                 </div>
                 <div className="adm-stat">
-                  <i>К выплате продавцам</i><b>{money(stats.totals.payout)}</b><u>чистыми</u>
+                  <i>{t("stt.payout")}</i><b>{eur(stats.totals.payout)}</b><u>{t("stt.netHint")}</u>
                 </div>
                 <div className="adm-stat">
-                  <i>Ожидает оплаты</i><b>{money(stats.totals.pending)}</b><u>новые заказы</u>
+                  <i>{t("stt.pending")}</i><b>{eur(stats.totals.pending)}</b><u>{t("stt.pendingHint")}</u>
                 </div>
               </div>
               <table className="adm-table">
                 <thead>
                   <tr>
-                    <th>Продавец</th><th>Товаров</th><th>Продано</th><th>Оборот</th>
-                    <th>Комиссия</th><th>К выплате</th><th>В ожидании</th>
+                    <th>{t("stt.seller")}</th><th>{t("stt.products")}</th><th>{t("ed.sold")}</th><th>{t("ord.gross")}</th>
+                    <th>{t("stt.commission")}</th><th>{t("a.kVyplate")}</th><th>{t("stt.waiting")}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -953,10 +937,10 @@ function Panel() {
                       <td><b>{r.name || "—"}</b>{r.id ? <i> · {r.commission}%</i> : null}</td>
                       <td>{r.products ?? 0}</td>
                       <td>{r.sold}</td>
-                      <td>{money(r.gross)}</td>
-                      <td className="adm-td-fee">{money(r.fee)}</td>
-                      <td><b>{money(r.net)}</b></td>
-                      <td className="adm-td-dim">{money(r.pending)}</td>
+                      <td>{eur(r.gross)}</td>
+                      <td className="adm-td-fee">{eur(r.fee)}</td>
+                      <td><b>{eur(r.net)}</b></td>
+                      <td className="adm-td-dim">{eur(r.pending)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -966,39 +950,39 @@ function Panel() {
             <>
               <div className="adm-cards">
                 <div className="adm-stat">
-                  <i>Продано на</i><b>{money(stats.totals.gross)}</b>
+                  <i>{t("a.prodanoNa")}</i><b>{eur(stats.totals.gross)}</b>
                   <u>{stats.totals.orders} заказов с вашими товарами</u>
                 </div>
                 <div className="adm-stat">
-                  <i>Комиссия площадки</i><b>−{money(stats.totals.fee)}</b><u>{stats.commission}% с позиции</u>
+                  <i>{t("a.komissiyaPloschadki")}</i><b>−{eur(stats.totals.fee)}</b><u>{stats.commission}% с позиции</u>
                 </div>
                 <div className="adm-stat adm-stat-key">
-                  <i>Ваш чистый заработок</i><b>{money(stats.totals.net)}</b><u>по оплаченным заказам</u>
+                  <i>{t("stt.yourNet")}</i><b>{eur(stats.totals.net)}</b><u>{t("a.poOplachennymZakazam")}</u>
                 </div>
                 <div className="adm-stat">
-                  <i>Ожидает оплаты</i><b>{money(stats.totals.pending)}</b><u>заказы без оплаты</u>
+                  <i>{t("stt.pending")}</i><b>{eur(stats.totals.pending)}</b><u>{t("a.zakazyBezOplaty")}</u>
                 </div>
               </div>
               <table className="adm-table">
                 <thead>
-                  <tr><th>Заказ</th><th>Дата</th><th>Статус</th><th>Позиции</th><th>Сумма</th><th>Комиссия</th><th>Вам</th></tr>
+                  <tr><th>{t("stt.order")}</th><th>{t("stt.date")}</th><th>{t("a.status")}</th><th>{t("ord.items")}</th><th>{t("a.summa")}</th><th>{t("stt.commission")}</th><th>{t("stt.toYou")}</th></tr>
                 </thead>
                 <tbody>
                   {(stats.history || []).map((h) => (
                     <tr key={h.order}>
                       <td><b>{h.order}</b></td>
                       <td>{new Date(h.at).toLocaleDateString("ru-RU")}</td>
-                      <td><span className={`adm-badge adm-st-${h.status || "new"}`}>{STATUS[h.status || "new"]}</span></td>
+                      <td><span className={`adm-badge adm-st-${h.status || "new"}`}>{statusLabel(t, h.status || "new")}</span></td>
                       <td className="adm-td-items">
                         {(h.items || []).map((i, k) => <span key={k}>№{i.n} {i.title}</span>)}
                       </td>
-                      <td>{money(h.gross)}</td>
-                      <td className="adm-td-fee">−{money(h.fee)}</td>
-                      <td><b>{money(h.net)}</b></td>
+                      <td>{eur(h.gross)}</td>
+                      <td className="adm-td-fee">−{eur(h.fee)}</td>
+                      <td><b>{eur(h.net)}</b></td>
                     </tr>
                   ))}
                   {(stats.history || []).length === 0 && (
-                    <tr><td colSpan={7} className="adm-empty">Продаж пока нет.</td></tr>
+                    <tr><td colSpan={7} className="adm-empty">{t("a.prodazhPokaNet")}</td></tr>
                   )}
                 </tbody>
               </table>

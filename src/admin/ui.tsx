@@ -6,6 +6,7 @@
  * подавлены совсем — поэтому здесь свои.
  */
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { useT } from "./lang";
 
 /* ── уведомления ───────────────────────────────────────────────── */
 type ToastKind = "ok" | "err" | "info";
@@ -24,6 +25,7 @@ const ToastCtx = createContext<ToastApi>({ ok: () => {}, err: () => {}, info: ()
 export const useToast = () => useContext(ToastCtx);
 
 export function Toasts({ children }: { children: React.ReactNode }) {
+  const { t: tr } = useT();
   const [list, setList] = useState<Toast[]>([]);
   const seq = useRef(0);
 
@@ -61,7 +63,7 @@ export function Toasts({ children }: { children: React.ReactNode }) {
                 копировать
               </button>
             )}
-            <button className="tst-x" onClick={() => setList((s) => s.filter((x) => x.id !== t.id))} aria-label="Закрыть">
+            <button className="tst-x" onClick={() => setList((s) => s.filter((x) => x.id !== t.id))} aria-label={tr("ui.close")}>
               ✕
             </button>
           </div>
@@ -89,6 +91,7 @@ export function Confirm({
   onYes: () => void;
   onNo: () => void;
 }) {
+  const { t } = useT();
   const [busy, setBusy] = useState(false);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onNo();
@@ -105,7 +108,7 @@ export function Confirm({
           {opts.consequence && <p className="cnf-conseq">{opts.consequence}</p>}
         </div>
         <footer className="adm-modal-foot">
-          <button className="adm-btn adm-ghost" onClick={onNo}>Отмена</button>
+          <button className="adm-btn adm-ghost" onClick={onNo}>{t("ed.cancel")}</button>
           <button
             className={`adm-btn${opts.danger ? " adm-danger-solid" : ""}`}
             disabled={busy}
@@ -114,7 +117,7 @@ export function Confirm({
               onYes();
             }}
           >
-            {busy ? "…" : opts.confirmLabel || "Подтвердить"}
+            {busy ? "…" : opts.confirmLabel || t("ui.confirm")}
           </button>
         </footer>
       </div>
@@ -157,11 +160,12 @@ export const Skeletons = ({ n = 4, h = 88 }: { n?: number; h?: number }) => (
 );
 
 export function ErrorBox({ text, onRetry }: { text: string; onRetry: () => void }) {
+  const { t } = useT();
   return (
     <div className="errbox">
-      <b>Не удалось загрузить данные</b>
+      <b>{t("ui.loadFail")}</b>
       <span>{text}</span>
-      <button className="adm-btn adm-btn-sm" onClick={onRetry}>Повторить</button>
+      <button className="adm-btn adm-btn-sm" onClick={onRetry}>{t("ui.retry")}</button>
     </div>
   );
 }
@@ -202,11 +206,11 @@ export const copy = async (text: string) => {
 };
 
 /** «2 минуты назад» — чтобы было видно, свежие ли данные на экране. */
-export function ago(iso: number | null) {
+export function ago(iso: number | null, t: (k: string, v?: Record<string, string | number>) => string) {
   if (!iso) return "";
   const sec = Math.round((Date.now() - iso) / 1000);
-  if (sec < 45) return "только что";
-  if (sec < 90) return "минуту назад";
+  if (sec < 45) return t("ui.justNow");
+  if (sec < 90) return t("ui.minAgo");
   if (sec < 3600) return `${Math.round(sec / 60)} мин назад`;
   return `${Math.round(sec / 3600)} ч назад`;
 }

@@ -5,8 +5,8 @@
  * администрирование площадки остаётся на русском.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { LANGS, makeT, type T } from "../i18n";
-import type { Lang } from "../data/catalog";
+import { makeT, type T } from "../i18n";
+import { useT } from "./lang";
 
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
@@ -41,7 +41,8 @@ const stageIndex = (stage: Partner["stage"]) =>
 
 /* ═══ кабинет партнёра ═══ */
 export function PartnerCabinet({ api, onChanged }: { api: Api; onChanged?: () => void }) {
-  const [lang, setLang] = useState<Lang>(() => (localStorage.getItem("epoha-lang") as Lang) || "lv");
+  /* Язык кабинета — общий с остальной панелью, переключатель живёт в шапке */
+  const { lang } = useT();
   const t = useMemo(() => makeT(lang), [lang]);
   const [me, setMe] = useState<Partner | null>(null);
   const [err, setErr] = useState("");
@@ -63,7 +64,7 @@ export function PartnerCabinet({ api, onChanged }: { api: Api; onChanged?: () =>
   if (err) return <p className="adm-err">{err}</p>;
   if (!me) return <p className="adm-hint">…</p>;
   if (me.stage === "active")
-    return <PartnerActive t={t} lang={lang} setLang={setLang} api={api} onSync={load} />;
+    return <PartnerActive t={t} api={api} onSync={load} />;
 
   const step = stageIndex(me.stage);
   return (
@@ -73,7 +74,6 @@ export function PartnerCabinet({ api, onChanged }: { api: Api; onChanged?: () =>
           <h2>{t("partner.onboarding.title")}</h2>
           <p>{t("partner.onboarding.subtitle")}</p>
         </div>
-        <LangPick lang={lang} setLang={setLang} />
       </header>
 
       <ol className="mp-steps">
@@ -108,15 +108,6 @@ export function PartnerCabinet({ api, onChanged }: { api: Api; onChanged?: () =>
   );
 }
 
-const LangPick = ({ lang, setLang }: { lang: Lang; setLang: (l: Lang) => void }) => (
-  <div className="mp-lang">
-    {LANGS.map((l) => (
-      <button key={l.code} className={lang === l.code ? "on" : ""} onClick={() => setLang(l.code)}>
-        {l.label}
-      </button>
-    ))}
-  </div>
-);
 
 /* ── шаг 1: реквизиты компании ── */
 function CompanyForm({ me, t, api, onSaved }: { me: Partner; t: T; api: Api; onSaved: (p: Partner) => void }) {
@@ -319,9 +310,7 @@ interface PayoutRow {
   items: { n: string; title: string; img: string; price: number }[];
 }
 
-function PartnerActive({
-  t, lang, setLang, api, onSync,
-}: { t: T; lang: Lang; setLang: (l: Lang) => void; api: Api; onSync: () => void }) {
+function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void }) {
   const [data, setData] = useState<{ buckets: Record<string, number>; rows: PayoutRow[]; balance: any; holdDays: number } | null>(null);
   useEffect(() => {
     api("api/partner/payouts").then(setData).catch(() => {});
@@ -353,7 +342,6 @@ function PartnerActive({
           </p>
         </div>
         <div className="mp-head-side">
-          <LangPick lang={lang} setLang={setLang} />
           <button className="adm-btn adm-ghost" onClick={openStripe}>Stripe →</button>
           <a className="adm-btn adm-ghost" href="api/partner/terms.pdf">PDF</a>
         </div>
@@ -423,6 +411,7 @@ export function PayoutBadge({ state, t, releaseAt }: { state: string; t: T; rele
 
 /* ═══ администрирование партнёров ═══ */
 export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => void }) {
+  const { t } = useT();
   const [list, setList] = useState<Partner[]>([]);
   const [busy, setBusy] = useState("");
   const [open, setOpen] = useState<string | null>(null);
@@ -446,8 +435,8 @@ export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => v
   };
 
   const STAGE: Record<string, string> = {
-    draft: "заполняет анкету", terms: "не принял условия", stripe: "проходит Stripe",
-    review: "ждёт проверки", active: "торгует", suspended: "приостановлен",
+    draft: t("m.zapolnyaetAnketu"), terms: t("m.nePrinyalUsloviya"), stripe: t("m.prohoditStripe"),
+    review: t("m.zhdetProverki"), active: t("m.torguet"), suspended: t("m.priostanovlen"),
   };
 
   return (
@@ -469,33 +458,33 @@ export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => v
             <div className="mp-partner-body">
               <div className="mp-cols">
                 <div>
-                  <h4>Реквизиты</h4>
+                  <h4>{t("m.rekvizity")}</h4>
                   {p.company?.name ? (
                     <dl>
-                      <div><dt>Название</dt><dd>{p.company.name}</dd></div>
-                      <div><dt>Рег. номер</dt><dd>{p.company.regNr || "—"}</dd></div>
-                      <div><dt>PVN</dt><dd>{p.company.vatNr || "нет"}</dd></div>
-                      <div><dt>Адрес</dt><dd>{p.company.address || "—"}</dd></div>
-                      <div><dt>Контакт</dt><dd>{p.company.contactPerson} · {p.company.phone} · {p.company.email}</dd></div>
+                      <div><dt>{t("ed.title")}</dt><dd>{p.company.name}</dd></div>
+                      <div><dt>{t("m.regNomer")}</dt><dd>{p.company.regNr || "—"}</dd></div>
+                      <div><dt>PVN</dt><dd>{p.company.vatNr || t("m.net")}</dd></div>
+                      <div><dt>{t("m.adres")}</dt><dd>{p.company.address || "—"}</dd></div>
+                      <div><dt>{t("m.kontakt")}</dt><dd>{p.company.contactPerson} · {p.company.phone} · {p.company.email}</dd></div>
                       <div><dt>IBAN</dt><dd>{p.company.iban || "—"}</dd></div>
-                      <div><dt>Товары</dt><dd>{p.company.goodsOrigin || "—"}</dd></div>
+                      <div><dt>{t("nav.goods")}</dt><dd>{p.company.goodsOrigin || "—"}</dd></div>
                     </dl>
                   ) : (
-                    <p className="adm-hint">анкета не заполнена</p>
+                    <p className="adm-hint">{t("m.anketaNeZapolnena")}</p>
                   )}
                 </div>
                 <div>
-                  <h4>Договор</h4>
+                  <h4>{t("m.dogovor")}</h4>
                   {p.terms ? (
                     <dl>
-                      <div><dt>Версия</dt><dd>{p.terms.version}</dd></div>
-                      <div><dt>Принят</dt><dd>{new Date(p.terms.acceptedAt).toLocaleString("ru-RU")}</dd></div>
+                      <div><dt>{t("m.versiya")}</dt><dd>{p.terms.version}</dd></div>
+                      <div><dt>{t("m.prinyat")}</dt><dd>{new Date(p.terms.acceptedAt).toLocaleString("ru-RU")}</dd></div>
                       <div><dt>IP</dt><dd>{p.terms.ip || "—"}</dd></div>
-                      <div><dt>Представитель</dt><dd>{p.terms.representative || "—"}</dd></div>
+                      <div><dt>{t("m.predstavitel")}</dt><dd>{p.terms.representative || "—"}</dd></div>
                       <div><dt>SHA-256</dt><dd className="mp-hash">{p.terms.sha256}</dd></div>
                     </dl>
                   ) : (
-                    <p className="adm-hint">не принят</p>
+                    <p className="adm-hint">{t("m.nePrinyat")}</p>
                   )}
                   {p.terms && (
                     <a className="adm-btn adm-ghost" href={`api/admin/sellers/${p.id}/terms.pdf`} target="_blank" rel="noopener noreferrer">
@@ -506,19 +495,19 @@ export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => v
                   <h4>Stripe</h4>
                   {p.stripe?.accountId ? (
                     <dl>
-                      <div><dt>Счёт</dt><dd><code>{p.stripe.accountId}</code></dd></div>
-                      <div><dt>Приём платежей</dt><dd>{p.stripe.chargesEnabled ? "да" : "нет"}</dd></div>
-                      <div><dt>Выплаты</dt><dd>{p.stripe.payoutsEnabled ? "да" : "нет"} · {p.stripe.payoutInterval || "?"}</dd></div>
-                      {p.stripe.disabledReason && <div><dt>Причина блока</dt><dd>{p.stripe.disabledReason}</dd></div>}
+                      <div><dt>{t("m.schet")}</dt><dd><code>{p.stripe.accountId}</code></dd></div>
+                      <div><dt>{t("s.priemPlatezhej")}</dt><dd>{p.stripe.chargesEnabled ? t("m.da") : t("m.net")}</dd></div>
+                      <div><dt>{t("nav.payouts")}</dt><dd>{p.stripe.payoutsEnabled ? t("m.da") : t("m.net")} · {p.stripe.payoutInterval || "?"}</dd></div>
+                      {p.stripe.disabledReason && <div><dt>{t("m.prichinaBloka")}</dt><dd>{p.stripe.disabledReason}</dd></div>}
                       {p.stripe.currentlyDue?.length ? (
-                        <div><dt>Stripe ждёт</dt><dd>{p.stripe.currentlyDue.join(", ")}</dd></div>
+                        <div><dt>{t("m.stripeZhdet")}</dt><dd>{p.stripe.currentlyDue.join(", ")}</dd></div>
                       ) : null}
                       {p.stripe.degraded && (
-                        <div><dt>Внимание</dt><dd className="mp-warn">выплатами управляет Stripe: {p.stripe.degraded}</dd></div>
+                        <div><dt>{t("m.vnimanie")}</dt><dd className="mp-warn">выплатами управляет Stripe: {p.stripe.degraded}</dd></div>
                       )}
                     </dl>
                   ) : (
-                    <p className="adm-hint">счёт не создан</p>
+                    <p className="adm-hint">{t("m.schetNeSozdan")}</p>
                   )}
                 </div>
               </div>
@@ -547,13 +536,14 @@ export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => v
           )}
         </article>
       ))}
-      {!list.length && <p className="adm-hint">Продавцов пока нет.</p>}
+      {!list.length && <p className="adm-hint">{t("m.prodavcovPokaNet")}</p>}
     </div>
   );
 }
 
 /* ═══ выплаты партнёрам ═══ */
 export function AdminPayouts({ api }: { api: Api }) {
+  const { t } = useT();
   const [data, setData] = useState<{ holdDays: number; rows: any[] } | null>(null);
   const [busy, setBusy] = useState("");
 
@@ -592,7 +582,7 @@ export function AdminPayouts({ api }: { api: Api }) {
             <div>
               <b>{r.name}</b>
               <small>
-                {r.accountId ? <code>{r.accountId}</code> : "нет счёта Stripe"}
+                {r.accountId ? <code>{r.accountId}</code> : t("m.netSchetaStripe")}
                 {r.iban ? ` · ${r.iban}` : ""}
               </small>
             </div>
@@ -600,12 +590,12 @@ export function AdminPayouts({ api }: { api: Api }) {
           </header>
           <div className="mp-partner-body">
             <div className="mp-cards">
-              <div className="mp-money mp-money-held"><span>Удержано</span><b>{money(r.buckets.held)}</b></div>
-              <div className="mp-money mp-money-available"><span>К выплате</span><b>{money(r.buckets.available)}</b></div>
-              <div className="mp-money mp-money-paid"><span>Выплачено</span><b>{money(r.buckets.paid)}</b></div>
+              <div className="mp-money mp-money-held"><span>{t("m.uderzhano")}</span><b>{money(r.buckets.held)}</b></div>
+              <div className="mp-money mp-money-available"><span>{t("a.kVyplate")}</span><b>{money(r.buckets.available)}</b></div>
+              <div className="mp-money mp-money-paid"><span>{t("m.vyplacheno")}</span><b>{money(r.buckets.paid)}</b></div>
               {r.balance && !r.balance.error && (
                 <div className="mp-money mp-money-bal">
-                  <span>Stripe: доступно / в пути</span>
+                  <span>{t("m.stripeDostupnoV")}</span>
                   <b>{money(r.balance.available)} / {money(r.balance.pending)}</b>
                 </div>
               )}
@@ -614,7 +604,7 @@ export function AdminPayouts({ api }: { api: Api }) {
 
             {r.orders?.length > 0 && (
               <table className="mp-table">
-                <thead><tr><th>Заказ</th><th>Товар</th><th>К выплате</th><th>Передан</th><th>Срок</th><th>Состояние</th></tr></thead>
+                <thead><tr><th>{t("stt.order")}</th><th>{t("m.tovar")}</th><th>{t("a.kVyplate")}</th><th>{t("m.peredan")}</th><th>{t("m.srok")}</th><th>{t("m.sostoyanie")}</th></tr></thead>
                 <tbody>
                   {r.orders.map((o: PayoutRow) => (
                     <tr key={o.order}>
@@ -623,7 +613,7 @@ export function AdminPayouts({ api }: { api: Api }) {
                       <td>{money(o.netCents)}</td>
                       <td>{date(o.deliveredAt)}</td>
                       <td>{date(o.releaseAt)}</td>
-                      <td>{o.state === "available" ? "готово" : o.state === "disputed" ? "спор" : "удержано"}</td>
+                      <td>{o.state === "available" ? t("m.gotovo") : o.state === "disputed" ? t("m.spor") : t("m.uderzhano2")}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -642,7 +632,7 @@ export function AdminPayouts({ api }: { api: Api }) {
           </div>
         </article>
       ))}
-      {!data?.rows?.length && <p className="adm-hint">Партнёров с продажами пока нет.</p>}
+      {!data?.rows?.length && <p className="adm-hint">{t("m.partnerovSProdazhami")}</p>}
     </div>
   );
 }
