@@ -60,14 +60,61 @@ async function backfillDates() {
 backfillDates();
 const saveProducts = (list) => writeJson(STORE, list);
 
-/* ── авторизация ── */
-const tokenFor = (pw) => crypto.createHmac("sha256", SECRET).update(pw).digest("hex");
-const VALID_TOKEN = tokenFor(ADMIN_PASSWORD);
-const auth = (req, res, next) => {
-  const t = req.get("x-token") || "";
-  if (t && crypto.timingSafeEqual(Buffer.from(t.padEnd(64).slice(0, 64)), Buffer.from(VALID_TOKEN)))
+/* ── аккаунты: главный админ + продавцы маркетплейса ── */
+const SELLERS = path.join(DATA_DIR, "sellers.json");
+const ADMIN_LOGIN = process.env.ADMIN_LOGIN || "admin";
+const COMMISSION = Number(process.env.COMMISSION || 20); // процент площадки
+
+const loadSellers = () => readJson(SELLERS, []);
+const saveSellers = (list) => writeJson(SELLERS, list);
+
+const hashPw = (pw, salt) => crypto.scryptSync(String(pw), salt, 32).toString("hex");
+
+/** Токен: подписанная полезная нагрузка с ролью и идентификатором. */
+const makeToken = (role, id) => {
+  const payload = Buffer.from(JSON.stringify({ r: role, i: id, t: Date.now() })).toString("base64url");
+  const sig = crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
+  return `${payload}.${sig}`;
+};
+const readToken = (token) => {
+  const [payload, sig] = String(token || "").split(".");
+  if (!payload || !sig) return null;
+  const expect = crypto.createHmac("sha256", SECRET).update(payload).digest("base64url");
+  if (sig.length !== expect.length) return null;
+  if (!crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(expect))) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString());
+    if (Date.now() - data.t > 30 * 864e5) return null; // месяц
+    return data;
+  } catch {
+    return null;
+  }
+};
+
+const auth = async (req, res, next) => {
+  const data = readToken(req.get("x-token"));
+  if (!data) return res.status(401).json({ error: "unauthorized" });
+  if (data.r === "admin") {
+    req.actor = { role: "admin", id: null, name: "Администратор", commission: COMMISSION };
     return next();
-  res.status(401).json({ error: "unauthorized" });
+  }
+  const seller = (await loadSellers()).find((x) => x.id === data.i && x.active !== false);
+  if (!seller) return res.status(401).json({ error: "unauthorized" });
+  req.actor = {
+    role: "seller",
+    id: seller.id,
+    name: seller.name,
+    commission: Number(seller.commission ?? COMMISSION),
+  };
+  next();
+};
+const adminOnly = (req, res, next) =>
+  req.actor?.role === "admin" ? next() : res.status(403).json({ error: "forbidden" });
+
+/** Доля площадки и чистая выручка продавца по одной сумме. */
+const split = (gross, rate) => {
+  const fee = Math.round(gross * rate) / 100;
+  return { gross, rate, fee, net: Math.round((gross - fee) * 100) / 100 };
 };
 
 /* ── импорт товара по ссылке ── */
@@ -400,6 +447,7 @@ app.post("/api/orders", async (req, res) => {
         price: Number(p.price) || 0,
         title: p.tr?.lv?.title || p.tr?.en?.title || `#${p.id}`,
         img: p.images?.[0] || "",
+        sellerId: p.sellerId || null,
       }));
     if (!items.length) return res.status(400).json({ error: "Grozs ir tukss" });
     if (!String(b.name || "").trim() || !String(b.contact || "").trim())
@@ -429,6 +477,19 @@ app.post("/api/orders", async (req, res) => {
       comment: String(b.comment || "").trim(),
       lang: b.lang || "lv",
     };
+
+    /* Разделение выручки: продавцам — чистыми, площадке — комиссия */
+    const sellersList = await loadSellers();
+    const bySeller = new Map();
+    for (const it of items) {
+      const key = it.sellerId || "shop";
+      bySeller.set(key, (bySeller.get(key) || 0) + it.price);
+    }
+    order.splits = [...bySeller.entries()].map(([key, sum]) => {
+      const sid = key === "shop" ? null : key;
+      const rate = sid ? Number(sellersList.find((x) => x.id === sid)?.commission ?? COMMISSION) : 0;
+      return { sellerId: sid, ...split(sum, rate) };
+    });
 
     const list = await readJson(ORDERS, []);
     list.unshift(order);
@@ -515,14 +576,14 @@ app.post("/api/stripe/webhook", express.raw({ type: "application/json" }), async
   }
 });
 
-app.delete("/api/admin/orders/:num", auth, async (req, res) => {
+app.delete("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
   const list = await readJson(ORDERS, []);
   await writeJson(ORDERS, list.filter((o) => o.order !== req.params.num));
   res.json({ ok: true });
 });
 
 /* Ручная отметка статуса заказа из админки */
-app.post("/api/admin/orders/:num", auth, async (req, res) => {
+app.post("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
   const list = await readJson(ORDERS, []);
   const idx = list.findIndex((o) => o.order === req.params.num);
   if (idx < 0) return res.status(404).json({ error: "not found" });
@@ -531,9 +592,190 @@ app.post("/api/admin/orders/:num", auth, async (req, res) => {
   res.json(list[idx]);
 });
 
-app.post("/api/admin/login", (req, res) => {
-  if ((req.body?.password || "") === ADMIN_PASSWORD) return res.json({ token: VALID_TOKEN });
-  res.status(401).json({ error: "wrong password" });
+app.post("/api/admin/login", async (req, res) => {
+  const login = String(req.body?.login || "").trim();
+  const password = String(req.body?.password || "");
+  if ((!login || login.toLowerCase() === ADMIN_LOGIN.toLowerCase()) && password === ADMIN_PASSWORD)
+    return res.json({ token: makeToken("admin", null), role: "admin", name: "Администратор" });
+
+  const seller = (await loadSellers()).find(
+    (x) => x.login.toLowerCase() === login.toLowerCase() && x.active !== false
+  );
+  if (seller && hashPw(password, seller.salt) === seller.hash)
+    return res.json({
+      token: makeToken("seller", seller.id),
+      role: "seller",
+      name: seller.name,
+      commission: Number(seller.commission ?? COMMISSION),
+    });
+  res.status(401).json({ error: "Неверный логин или пароль" });
+});
+
+app.get("/api/admin/me", auth, (req, res) => res.json(req.actor));
+
+/* ── продавцы (только главный админ) ── */
+app.get("/api/admin/sellers", auth, adminOnly, async (_req, res) => {
+  const [sellers, products] = await Promise.all([loadSellers(), loadProducts()]);
+  res.json(
+    sellers.map((s) => ({
+      id: s.id,
+      login: s.login,
+      name: s.name,
+      contact: s.contact || "",
+      commission: Number(s.commission ?? COMMISSION),
+      active: s.active !== false,
+      createdAt: s.createdAt,
+      products: products.filter((p) => p.sellerId === s.id).length,
+    }))
+  );
+});
+
+app.post("/api/admin/sellers", auth, adminOnly, async (req, res) => {
+  const b = req.body || {};
+  const list = await loadSellers();
+  const login = String(b.login || "").trim().toLowerCase();
+  if (!login || !String(b.name || "").trim())
+    return res.status(400).json({ error: "Нужны логин и имя продавца" });
+
+  const idx = list.findIndex((x) => x.id === b.id);
+  if (list.some((x) => x.login.toLowerCase() === login && x.id !== b.id))
+    return res.status(400).json({ error: "Такой логин уже занят" });
+  if (idx < 0 && !b.password) return res.status(400).json({ error: "Задайте пароль" });
+
+  const base = idx >= 0 ? list[idx] : { id: `s${Date.now().toString(36)}`, createdAt: new Date().toISOString() };
+  const next = {
+    ...base,
+    login,
+    name: String(b.name).trim(),
+    contact: String(b.contact || "").trim(),
+    commission: Math.max(0, Math.min(90, Number(b.commission ?? COMMISSION))),
+    active: b.active !== false,
+  };
+  if (b.password) {
+    next.salt = crypto.randomBytes(16).toString("hex");
+    next.hash = hashPw(b.password, next.salt);
+  }
+  if (idx >= 0) list[idx] = next;
+  else list.push(next);
+  await saveSellers(list);
+  res.json({ id: next.id, login: next.login, name: next.name });
+});
+
+app.delete("/api/admin/sellers/:id", auth, adminOnly, async (req, res) => {
+  const list = await loadSellers();
+  await saveSellers(list.filter((x) => x.id !== req.params.id));
+  res.json({ ok: true });
+});
+
+/* ── статистика: админу по всем, продавцу — по себе ── */
+app.get("/api/admin/stats", auth, async (req, res) => {
+  const [orders, sellers, products] = await Promise.all([
+    readJson(ORDERS, []),
+    loadSellers(),
+    loadProducts(),
+  ]);
+  const done = (o) => o.status === "paid" || o.status === "done";
+
+  if (req.actor.role === "seller") {
+    const mine = req.actor.id;
+    let gross = 0;
+    let fee = 0;
+    let pending = 0;
+    const history = [];
+    for (const o of orders) {
+      const items = (o.items || []).filter((i) => i.sellerId === mine);
+      if (!items.length) continue;
+      const sum = items.reduce((a, i) => a + (i.price || 0), 0);
+      const sp = split(sum, req.actor.commission);
+      if (done(o)) {
+        gross += sum;
+        fee += sp.fee;
+      } else pending += sp.net;
+      history.push({
+        order: o.order,
+        at: o.at,
+        status: o.status || "new",
+        items: items.map((i) => ({ n: i.n, title: i.title, price: i.price, img: i.img })),
+        gross: sum,
+        fee: sp.fee,
+        net: sp.net,
+      });
+    }
+    return res.json({
+      role: "seller",
+      commission: req.actor.commission,
+      products: products.filter((p) => p.sellerId === mine).length,
+      totals: {
+        orders: history.length,
+        gross: Math.round(gross * 100) / 100,
+        fee: Math.round(fee * 100) / 100,
+        net: Math.round((gross - fee) * 100) / 100,
+        pending: Math.round(pending * 100) / 100,
+      },
+      history,
+    });
+  }
+
+  const rows = new Map();
+  const row = (id) => {
+    if (!rows.has(id))
+      rows.set(id, { id, name: id ? "" : "Витрина магазина", sold: 0, gross: 0, fee: 0, net: 0, pending: 0 });
+    return rows.get(id);
+  };
+  let gross = 0;
+  let fee = 0;
+  let pending = 0;
+  let paidOrders = 0;
+  for (const o of orders) {
+    const ok = done(o);
+    if (ok) paidOrders++;
+    for (const it of o.items || []) {
+      const sid = it.sellerId || null;
+      const rate = sid ? Number(sellers.find((x) => x.id === sid)?.commission ?? COMMISSION) : 0;
+      const sp = split(it.price || 0, rate);
+      const r = row(sid);
+      if (ok) {
+        r.sold++;
+        r.gross += sp.gross;
+        r.fee += sp.fee;
+        r.net += sp.net;
+        gross += sp.gross;
+        fee += sp.fee;
+      } else {
+        r.pending += sp.gross;
+        pending += sp.gross;
+      }
+    }
+  }
+  for (const s of sellers) {
+    const r = row(s.id);
+    r.name = s.name;
+    r.commission = Number(s.commission ?? COMMISSION);
+    r.products = products.filter((p) => p.sellerId === s.id).length;
+  }
+  const shop = rows.get(null);
+  if (shop) shop.products = products.filter((p) => !p.sellerId).length;
+
+  res.json({
+    role: "admin",
+    totals: {
+      orders: orders.length,
+      paidOrders,
+      gross: Math.round(gross * 100) / 100,
+      fee: Math.round(fee * 100) / 100,
+      payout: Math.round((gross - fee) * 100) / 100,
+      pending: Math.round(pending * 100) / 100,
+      sellers: sellers.length,
+      products: products.length,
+    },
+    rows: [...rows.values()].map((r) => ({
+      ...r,
+      gross: Math.round(r.gross * 100) / 100,
+      fee: Math.round(r.fee * 100) / 100,
+      net: Math.round(r.net * 100) / 100,
+      pending: Math.round(r.pending * 100) / 100,
+    })),
+  });
 });
 
 app.post("/api/admin/import", auth, async (req, res) => {
@@ -580,6 +822,16 @@ app.post("/api/admin/products", auth, async (req, res) => {
   }
   const list = await loadProducts();
   const idx = list.findIndex((x) => x.id === p.id);
+
+  /* Продавец ведёт только свои карточки; администратор — любые */
+  if (req.actor.role === "seller") {
+    if (idx >= 0 && list[idx].sellerId !== req.actor.id)
+      return res.status(403).json({ error: "Это товар другого продавца" });
+    p.sellerId = req.actor.id;
+  } else {
+    p.sellerId = p.sellerId ?? (idx >= 0 ? list[idx].sellerId : null) ?? null;
+  }
+
   const nextN = String(
     list.reduce((m, x) => Math.max(m, Number(x.n) || 0), 0) + 1
   ).padStart(2, "0");
@@ -592,6 +844,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
     sold: Boolean(p.sold),
     images: Array.isArray(p.images) ? p.images.filter(Boolean) : [],
     source: p.source || "",
+    sellerId: p.sellerId ?? null,
     tr: {
       lv: { title: "", era: "", desc: "", ...(p.tr?.lv || {}) },
       en: { title: "", era: "", desc: "", ...(p.tr?.en || {}) },
@@ -607,11 +860,45 @@ app.post("/api/admin/products", auth, async (req, res) => {
 app.delete("/api/admin/products/:id", auth, async (req, res) => {
   const id = Number(req.params.id);
   const list = await loadProducts();
+  const item = list.find((x) => x.id === id);
+  if (req.actor.role === "seller" && item && item.sellerId !== req.actor.id)
+    return res.status(403).json({ error: "Это товар другого продавца" });
   await saveProducts(list.filter((x) => x.id !== id));
   res.json({ ok: true });
 });
 
-app.get("/api/admin/orders", auth, async (_req, res) => res.json(await readJson(ORDERS, [])));
+app.get("/api/admin/orders", auth, async (req, res) => {
+  const orders = await readJson(ORDERS, []);
+  if (req.actor.role === "admin") return res.json(orders);
+
+  /* Продавцу — только заказы с его товарами и только его позиции и суммы */
+  const mine = req.actor.id;
+  res.json(
+    orders
+      .map((o) => {
+        const items = (o.items || []).filter((i) => i.sellerId === mine);
+        if (!items.length) return null;
+        const sum = items.reduce((a, i) => a + (i.price || 0), 0);
+        const sp = split(sum, req.actor.commission);
+        return {
+          order: o.order,
+          at: o.at,
+          status: o.status || "new",
+          delivery: o.delivery,
+          address: o.address,
+          name: o.name,
+          contact: o.contact,
+          email: o.email,
+          comment: o.comment,
+          items,
+          total: sp.gross,
+          fee: sp.fee,
+          net: sp.net,
+        };
+      })
+      .filter(Boolean)
+  );
+});
 
 app.use("/uploads", express.static(UPLOADS, { maxAge: "30d", immutable: true }));
 app.use(express.static(DIST, { maxAge: "1h" }));
