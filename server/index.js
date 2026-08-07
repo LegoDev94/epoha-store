@@ -44,9 +44,10 @@ const writeJson = async (file, data) =>
   fsp.writeFile(file, JSON.stringify(data, null, 1), "utf8");
 
 const loadProducts = () => readJson(STORE, []);
+const saveProducts = (list) => writeJson(STORE, list);
 
-/* У товаров, добавленных до появления фильтров, даты нет — проставляем
-   её один раз, сохраняя текущий порядок витрины (новые сверху). */
+/* У товаров, добавленных до появления дат, поля createdAt нет —
+   проставляем один раз, сохраняя текущий порядок витрины. */
 async function backfillDates() {
   const list = await loadProducts();
   if (!list.length || list.every((p) => p.createdAt)) return;
@@ -58,7 +59,6 @@ async function backfillDates() {
   console.log("[vm] проставлены даты добавления товаров");
 }
 backfillDates();
-const saveProducts = (list) => writeJson(STORE, list);
 
 /* ── аккаунты: главный админ + продавцы маркетплейса ── */
 const SELLERS = path.join(DATA_DIR, "sellers.json");
@@ -778,7 +778,7 @@ app.get("/api/admin/stats", auth, async (req, res) => {
   });
 });
 
-app.post("/api/admin/import", auth, async (req, res) => {
+app.post("/api/admin/import", auth, adminOnly, async (req, res) => {
   try {
     const url = String(req.body?.url || "").trim();
     if (!/^https?:\/\//.test(url)) return res.status(400).json({ error: "Нужна ссылка http(s)://" });

@@ -185,6 +185,8 @@ function Editor({
   );
   const [busy, setBusy] = useState<false | "save" | "tr" | "up">(false);
   const [imgUrl, setImgUrl] = useState("");
+  const [progress, setProgress] = useState("");
+  const [drag, setDrag] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const setTr = (lang: Lang, field: "title" | "era" | "desc", v: string) =>
@@ -207,18 +209,62 @@ function Editor({
     }
   };
 
-  const upload = async (files: FileList | null) => {
-    if (!files?.length) return;
+  /* Снимок с телефона весит 5–12 МБ: ужимаем прямо в браузере, на
+     сервер уходит лёгкий JPEG, витрина остаётся быстрой. */
+  const shrink = (file: File): Promise<File> =>
+    new Promise((resolve) => {
+      if (!/^image\/(jpe?g|png|webp)$/i.test(file.type) || file.size < 400_000) return resolve(file);
+      const img = new Image();
+      const url = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(url);
+        const max = 1600;
+        const scale = Math.min(1, max / Math.max(img.width, img.height));
+        if (scale === 1) return resolve(file);
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return resolve(file);
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        canvas.toBlob(
+          (blob) =>
+            resolve(
+              blob
+                ? new File([blob], file.name.replace(/\.(png|webp)$/i, ".jpg"), { type: "image/jpeg" })
+                : file
+            ),
+          "image/jpeg",
+          0.85
+        );
+      };
+      img.onerror = () => {
+        URL.revokeObjectURL(url);
+        resolve(file);
+      };
+      img.src = url;
+    });
+
+  const upload = async (files: FileList | File[] | null) => {
+    const list = files ? [...files].filter((f) => f.type.startsWith("image/")) : [];
+    if (!list.length) return;
     setBusy("up");
+    setProgress(`0 / ${list.length}`);
     try {
-      const fd = new FormData();
-      [...files].forEach((f) => fd.append("files", f));
-      const { images } = await api("api/admin/upload", { method: "POST", body: fd });
-      setP((s) => ({ ...s, images: [...s.images, ...images] }));
+      const done: string[] = [];
+      for (let i = 0; i < list.length; i++) {
+        const fd = new FormData();
+        fd.append("files", await shrink(list[i]));
+        const { images } = await api("api/admin/upload", { method: "POST", body: fd });
+        done.push(...images);
+        setProgress(`${i + 1} / ${list.length}`);
+        setP((s) => ({ ...s, images: [...s.images, ...images] }));
+      }
     } catch (e) {
       alert(String((e as Error).message));
     } finally {
       setBusy(false);
+      setProgress("");
     }
   };
 
@@ -280,29 +326,69 @@ function Editor({
             {p.images.map((im, i) => (
               <div className="adm-img" key={im + i}>
                 <img src={im} alt="" />
-                <button onClick={() => setP({ ...p, images: p.images.filter((_, k) => k !== i) })}>✕</button>
-                {i === 0 && <b>обложка</b>}
+                <button
+                  className="adm-img-x"
+                  title="Удалить фото"
+                  onClick={() => setP({ ...p, images: p.images.filter((_, k) => k !== i) })}
+                >
+                  ✕
+                </button>
+                {i === 0 ? (
+                  <b>обложка</b>
+                ) : (
+                  <button
+                    className="adm-img-cover"
+                    onClick={() =>
+                      setP({ ...p, images: [im, ...p.images.filter((_, k) => k !== i)] })
+                    }
+                  >
+                    сделать обложкой
+                  </button>
+                )}
               </div>
             ))}
-            <div className="adm-img adm-img-add">
-              <button onClick={() => fileRef.current?.click()}>{busy === "up" ? "…" : "+ файл"}</button>
-              <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
+          </div>
+
+          <div
+            className={`adm-drop${drag ? " over" : ""}`}
+            onDragOver={(e) => {
+              e.preventDefault();
+              setDrag(true);
+            }}
+            onDragLeave={() => setDrag(false)}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDrag(false);
+              upload(e.dataTransfer.files);
+            }}
+            onClick={() => fileRef.current?.click()}
+          >
+            <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M12 16V4m0 0L8 8m4-4 4 4" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3" strokeLinecap="round" />
+            </svg>
+            <b>{busy === "up" ? `Загружаем ${progress}…` : "Перетащите фото сюда или выберите файлы"}</b>
+            <i>JPG, PNG или WEBP · можно сразу несколько · большие снимки сожмём автоматически</i>
+            <input ref={fileRef} type="file" accept="image/*" multiple hidden onChange={(e) => upload(e.target.files)} />
+          </div>
+
+          <details className="adm-bylink">
+            <summary>…или добавить фото по прямой ссылке</summary>
+            <div className="adm-row">
+              <input value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} placeholder="https://…/photo.jpg" />
+              <button
+                className="adm-btn adm-btn-sm"
+                onClick={() => {
+                  if (imgUrl.trim()) {
+                    setP({ ...p, images: [...p.images, imgUrl.trim()] });
+                    setImgUrl("");
+                  }
+                }}
+              >
+                Добавить
+              </button>
             </div>
-          </div>
-          <div className="adm-row">
-            <input value={imgUrl} onChange={(e) => setImgUrl(e.target.value)} placeholder="…или вставьте прямую ссылку на фото" />
-            <button
-              className="adm-btn adm-btn-sm"
-              onClick={() => {
-                if (imgUrl.trim()) {
-                  setP({ ...p, images: [...p.images, imgUrl.trim()] });
-                  setImgUrl("");
-                }
-              }}
-            >
-              Добавить
-            </button>
-          </div>
+          </details>
 
           <div className="adm-tabs">
             {LANGS.map((l) => (
@@ -645,6 +731,7 @@ export default function AdminApp() {
 
       {tab === "goods" && (
         <>
+          {isAdmin ? (
           <section className="adm-import">
             <div className="adm-import-main">
               <label className="adm-f">
@@ -670,6 +757,20 @@ export default function AdminApp() {
               + Добавить вручную
             </button>
           </section>
+          ) : (
+            <section className="adm-import">
+              <div className="adm-import-main">
+                <b className="adm-sec-title">Ваши товары на витрине</b>
+                <p className="adm-hint">
+                  Заполните карточку, загрузите фото со своего устройства — товар появится на
+                  витрине сразу на трёх языках. Переводы сделаем автоматически.
+                </p>
+              </div>
+              <button className="adm-btn" onClick={() => { setNote(""); setEdit(empty()); }}>
+                + Добавить товар
+              </button>
+            </section>
+          )}
 
           <div className="adm-filters">
             <input className="adm-fl-search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Поиск по названию или номеру" />
