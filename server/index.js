@@ -1509,7 +1509,17 @@ app.get("/api/admin/orders/:num/mail/preview", auth, adminOnly, async (req, res)
   const order = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
   if (!order) return res.status(404).json({ error: "Заказ не найден" });
   try {
-    const built = letters.build(kind, order, { reserveMin: RESERVE_MIN() });
+    /* В письме об оформлении стоит кнопка оплаты — чтобы предпросмотр
+       показывал ровно то же, берём ссылку у Stripe по сохранённой
+       сессии. Просроченная сессия просто оставит письмо без кнопки. */
+    let payUrl = null;
+    if (kind === "buyer-new" && order.session && connect.hasStripe()) {
+      payUrl = await connect
+        .getSession(order.session, order.stripeAccountId)
+        .then((s) => s?.url || null)
+        .catch(() => null);
+    }
+    const built = letters.build(kind, order, { reserveMin: RESERVE_MIN(), payUrl });
     res.json({ subject: built.subject, html: built.html, lang: built.lang });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
