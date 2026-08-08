@@ -9,9 +9,9 @@ export const LANGS: { code: Lang; label: string; full: string }[] = [
 type Dict = Record<string, string>;  // + sofa.lv marketplace keys
 
 const lv: Dict = {
-  "meta.title": "VINTAGE MĒBELES — antīkas mēbeles ar vēsturi",
+  "meta.title": "SOFA.LV — antīkas mēbeles ar vēsturi",
   "meta.desc":
-    "VINTAGE MĒBELES — vintage un antīku mēbeļu veikals: rokoko, Gustava stils, bīdermeiers. Autentiskums, restaurācija, piegāde Eiropā.",
+    "SOFA.LV — vintage un antīku mēbeļu veikals: rokoko, Gustava stils, bīdermeiers. Autentiskums, restaurācija, piegāde Eiropā.",
 
   "nav.search": "Meklēt priekšmetu: rokoko, spogulis, kumode…",
   "nav.allResults": "Visi rezultāti katalogā →",
@@ -164,7 +164,7 @@ const lv: Dict = {
   "ftr.rights": "Demonstrācijas skatlogs",
   "ftr.by": "Dizains un izstrāde —",
   "wa.label": "Rakstīt WhatsApp",
-  "wa.hello": "Sveiki! Interesē priekšmets no VINTAGE MĒBELES skatloga",
+  "wa.hello": "Sveiki! Interesē priekšmets no SOFA.LV skatloga",
 
   /* ── маркетплейс sofa.lv: продавец, оформление, кабинет партнёра ── */
   "seller.block.title": "Pārdevēja juridiskā informācija",
@@ -287,9 +287,9 @@ const lv: Dict = {
 };
 
 const en: Dict = {
-  "meta.title": "VINTAGE MĒBELES — antique furniture with a history",
+  "meta.title": "SOFA.LV — antique furniture with a history",
   "meta.desc":
-    "VINTAGE MĒBELES — a shop of vintage and antique furniture: rococo, Gustavian, Biedermeier. Authenticity, restoration, delivery across Europe.",
+    "SOFA.LV — a shop of vintage and antique furniture: rococo, Gustavian, Biedermeier. Authenticity, restoration, delivery across Europe.",
 
   "nav.search": "Find a piece: rococo, mirror, chest…",
   "nav.allResults": "All results in the catalogue →",
@@ -442,7 +442,7 @@ const en: Dict = {
   "ftr.rights": "Demonstration showcase",
   "ftr.by": "Design and development —",
   "wa.label": "Chat on WhatsApp",
-  "wa.hello": "Hello! I am interested in a piece from the VINTAGE MĒBELES showcase",
+  "wa.hello": "Hello! I am interested in a piece from the SOFA.LV showcase",
 
   /* ── маркетплейс sofa.lv: продавец, оформление, кабинет партнёра ── */
   "seller.block.title": "Seller legal information",
@@ -565,9 +565,9 @@ const en: Dict = {
 };
 
 const ru: Dict = {
-  "meta.title": "VINTAGE MĒBELES — винтажная мебель с историей",
+  "meta.title": "SOFA.LV — винтажная мебель с историей",
   "meta.desc":
-    "VINTAGE MĒBELES — магазин винтажной и антикварной мебели: рококо, густавианский стиль, бидермейер. Подлинность, реставрация, доставка по Европе.",
+    "SOFA.LV — магазин винтажной и антикварной мебели: рококо, густавианский стиль, бидермейер. Подлинность, реставрация, доставка по Европе.",
 
   "nav.search": "Найти предмет: рококо, зеркало, комод…",
   "nav.allResults": "Все результаты в каталоге →",
@@ -720,7 +720,7 @@ const ru: Dict = {
   "ftr.rights": "Демонстрационная витрина",
   "ftr.by": "Дизайн и разработка —",
   "wa.label": "Написать в WhatsApp",
-  "wa.hello": "Здравствуйте! Интересует предмет с витрины VINTAGE MĒBELES",
+  "wa.hello": "Здравствуйте! Интересует предмет с витрины SOFA.LV",
   /* ── маркетплейс sofa.lv: продавец, оформление, кабинет партнёра ── */
   "seller.block.title": "Юридическая информация о продавце",
   "seller.block.subtitle": "Этот товар продаёт партнёр SOFA.LV — юридическое лицо.",
