@@ -423,6 +423,90 @@ export function PayoutBadge({ state, t, releaseAt }: { state: string; t: T; rele
 }
 
 /* ═══ администрирование партнёров ═══ */
+/**
+ * Заявки с сайта: кто попросился в партнёры.
+ *
+ * Заявка уходит письмом, но письмо может не дойти или потеряться,
+ * поэтому список лежит и здесь. Отсюда видно, с кем уже говорили.
+ */
+interface Application {
+  id: string; at: string; status: string;
+  company: string; regNr?: string; person: string; email: string;
+  phone?: string; goods?: string; link?: string; message?: string; lang?: string;
+}
+
+export function PartnerApplications({ api }: { api: Api }) {
+  const { t } = useT();
+  const toast = useToast();
+  const [list, setList] = useState<Application[]>([]);
+  const [open, setOpen] = useState<string | null>(null);
+  const [busy, setBusy] = useState("");
+
+  const load = useCallback(() => {
+    api("api/admin/applications").then(setList).catch(() => {});
+  }, [api]);
+  useEffect(load, [load]);
+
+  const act = async (id: string, body: any, method = "POST") => {
+    setBusy(id);
+    try {
+      await api(`api/admin/applications/${id}`, { method, body: body ? JSON.stringify(body) : undefined });
+      load();
+    } catch (e) {
+      toast.err(t("ui.failed"), String((e as Error).message));
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const fresh = list.filter((a) => a.status === "new").length;
+  if (!list.length) return null;
+
+  return (
+    <section className="mp-apps">
+      <h3>
+        {t("m.zayavkiSSajta")}
+        {fresh > 0 && <span className="mp-apps-new">{fresh}</span>}
+      </h3>
+      {list.map((a) => (
+        <article key={a.id} className={`mp-app mp-app-${a.status}`}>
+          <header onClick={() => setOpen(open === a.id ? null : a.id)}>
+            <div>
+              <b>{a.company}</b>
+              <small>
+                {a.person} · {a.email}
+                {a.phone ? ` · ${a.phone}` : ""} · {date(a.at)}
+              </small>
+            </div>
+            <span className="mp-badge">{a.status === "new" ? t("m.novaya") : a.status === "answered" ? t("m.otvecheno") : t("m.otklonena")}</span>
+          </header>
+          {open === a.id && (
+            <div className="mp-app-body">
+              <dl>
+                {a.regNr && <div><dt>Reģ. Nr.</dt><dd>{a.regNr}</dd></div>}
+                {a.goods && <div><dt>{t("m.chtoProdaet")}</dt><dd>{a.goods}</dd></div>}
+                {a.link && <div><dt>{t("m.ssylka")}</dt><dd><a href={a.link} target="_blank" rel="noopener noreferrer">{a.link}</a></dd></div>}
+                {a.message && <div><dt>{t("m.soobschenie")}</dt><dd>{a.message}</dd></div>}
+              </dl>
+              <div className="mp-btns">
+                <a className="adm-btn adm-btn-sm" href={`mailto:${a.email}`}>{t("m.napisat")}</a>
+                <button className="adm-btn adm-btn-sm adm-ghost" disabled={busy === a.id}
+                  onClick={() => act(a.id, { status: a.status === "answered" ? "new" : "answered" })}>
+                  {a.status === "answered" ? t("m.vernutVNovye") : t("m.otmetitOtvechennoj")}
+                </button>
+                <button className="adm-btn adm-btn-sm adm-ghost" disabled={busy === a.id}
+                  onClick={() => act(a.id, { status: "declined" })}>{t("m.otklonit")}</button>
+                <button className="adm-btn adm-btn-sm adm-ghost" disabled={busy === a.id}
+                  onClick={() => act(a.id, null, "DELETE")}>{t("gd.deleteForever")}</button>
+              </div>
+            </div>
+          )}
+        </article>
+      ))}
+    </section>
+  );
+}
+
 export function AdminPartners({ api, onChanged }: { api: Api; onChanged: () => void }) {
   const { t } = useT();
   const toast = useToast();

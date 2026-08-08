@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Category, Lang, Lot } from "../data/catalog";
 import { Select } from "../ui/Select";
-import { AdminPartners, AdminPayouts, PartnerCabinet } from "./Marketplace";
+import { AdminPartners, AdminPayouts, PartnerApplications, PartnerCabinet } from "./Marketplace";
 import Goods, { type AdmLot } from "./Goods";
 import Orders, { needsAction, statusLabel, type Order } from "./Orders";
 import Settings from "./Settings";
@@ -884,6 +884,7 @@ function Panel() {
             <button className="adm-btn" onClick={() => setSellerEdit({})}>{t("sl.add")}</button>
           </section>
 
+          <PartnerApplications api={api} />
           <AdminPartners api={api} onChanged={() => { loadSellers(); loadStats(); }} />
 
           <div className="adm-list">

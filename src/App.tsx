@@ -9,6 +9,7 @@ import {
 } from "./data/catalog";
 import { LANGS, detectLang, localeOf, makeT, type T } from "./i18n";
 import { Logo } from "./Logo";
+import { PartnerPage } from "./Partner";
 import { Photo, SIZES, type PhotoMeta } from "./Photo";
 import { Select } from "./ui/Select";
 
@@ -26,6 +27,7 @@ type Route =
   | { view: "checkout" }
   | { view: "success"; order: string }
   | { view: "legal"; doc: string }
+  | { view: "partner" }
   | { view: "admin" };
 
 function parseRoute(): Route {
@@ -34,6 +36,7 @@ function parseRoute(): Route {
   if (lot) return { view: "lot", id: Number(lot[1]) };
   const doc = h.match(/^#\/legal\/([a-z]+)/);
   if (doc) return { view: "legal", doc: doc[1] };
+  if (h.startsWith("#/partner")) return { view: "partner" };
   if (h.startsWith("#/favs")) return { view: "favs" };
   if (h.startsWith("#/cart")) return { view: "cart" };
   if (h.startsWith("#/checkout")) return { view: "checkout" };
@@ -618,6 +621,9 @@ function Footer({ t }: { t: T }) {
             <a href="#/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>{t("legal.buyer")}</a>
             <a href="#/legal/privacy" onClick={(e) => { e.preventDefault(); go("/legal/privacy"); }}>{t("legal.privacy")}</a>
             <a href="#/legal/partner" onClick={(e) => { e.preventDefault(); go("/legal/partner"); }}>{t("legal.partner")}</a>
+            <a className="ftr-apply" href="#/partner" onClick={(e) => { e.preventDefault(); go("/partner"); }}>
+              {t("ftr.partner")}
+            </a>
           </div>
         </div>
         <div className="ftr-bottom">
@@ -1704,6 +1710,7 @@ export default function App() {
       {route.view === "checkout" && <CheckoutPage lots={lots} sellers={sellers} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
       {route.view === "success" && <SuccessPage order={route.order} t={t} />}
       {route.view === "legal" && <LegalPage doc={route.doc} t={t} />}
+      {route.view === "partner" && <PartnerPage t={t} lang={lang} go={go} />}
       {conflict && (
         <SellerConflict
           current={conflict.current}

@@ -1591,3 +1591,82 @@ html::-webkit-scrollbar-thumb {
 /* Обёртка <picture> не должна участвовать в раскладке: все размеры
    и позиционирование заданы для самой картинки. */
 picture { display: contents; }
+
+/* ── Страница «стать партнёром» ─────────────────────────────────── */
+.ptn-hero { margin: 26px 0 34px; }
+.ptn-kicker {
+  font-family: var(--sans); font-size: 11px; font-weight: 600;
+  letter-spacing: 0.2em; text-transform: uppercase; color: var(--brass-sh);
+}
+.ptn-hero h1 {
+  margin: 10px 0 12px; font-family: var(--serif); font-weight: 400;
+  font-size: clamp(30px, 5vw, 46px); line-height: 1.12;
+}
+.ptn-hero p { font-size: 16px; line-height: 1.62; color: var(--paper-dim); max-width: 62ch; }
+
+.ptn-steps {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 18px; margin-bottom: 40px;
+}
+.ptn-step {
+  padding: 18px 20px 20px; border: 1px solid var(--hair); border-radius: 14px;
+  background: rgba(255, 253, 246, 0.6);
+}
+.ptn-step i {
+  display: grid; place-items: center; width: 26px; height: 26px; margin-bottom: 10px;
+  border-radius: 50%; background: var(--brass-sh); color: #fff;
+  font-style: normal; font-size: 13px; font-weight: 700; font-family: var(--sans);
+}
+.ptn-step b { display: block; font-size: 15px; margin-bottom: 6px; }
+.ptn-step p { font-size: 13.5px; line-height: 1.6; color: var(--muted); }
+
+.ptn-terms { margin-bottom: 40px; }
+.ptn-terms h2, .ptn-form h2 {
+  font-family: var(--serif); font-weight: 400; font-size: 25px; margin-bottom: 14px;
+}
+.ptn-terms dl { display: flex; flex-direction: column; gap: 12px; }
+.ptn-terms dl > div {
+  display: grid; grid-template-columns: 190px 1fr; gap: 18px;
+  padding-bottom: 12px; border-bottom: 1px solid var(--hair);
+}
+.ptn-terms dt { font-size: 13px; font-weight: 600; color: var(--brass-sh); }
+.ptn-terms dd { font-size: 14.5px; line-height: 1.6; color: var(--paper); }
+.ptn-terms-note { margin-top: 14px; font-size: 13px; color: var(--muted); }
+.ptn-terms-note a { color: var(--brass-sh); }
+
+.ptn-form { margin-bottom: 60px; }
+.ptn-form-lead { font-size: 14px; color: var(--muted); margin-bottom: 18px; }
+.ptn-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 18px; }
+.ptn-grid label { display: flex; flex-direction: column; gap: 6px; }
+.ptn-grid label > span { font-size: 12.5px; font-weight: 600; color: var(--paper); }
+.ptn-grid label > span i { font-style: normal; font-weight: 400; color: var(--muted); }
+.ptn-wide { grid-column: 1 / -1; }
+.ptn-grid input, .ptn-grid textarea {
+  width: 100%; padding: 11px 13px; font: inherit; font-size: 14.5px;
+  border: 1px solid var(--hair); border-radius: 10px;
+  background: rgba(255, 253, 246, 0.8); color: var(--paper);
+}
+.ptn-grid textarea { resize: vertical; min-height: 96px; line-height: 1.55; }
+.ptn-grid input:focus, .ptn-grid textarea:focus {
+  outline: none; border-color: var(--brass); background: #fffdf6;
+}
+.ptn-grid input.bad { border-color: #b03a2e; background: rgba(176, 58, 46, 0.05); }
+.ptn-form .btn-brass { margin-top: 20px; }
+.ptn-consent { margin-top: 12px; font-size: 12.5px; line-height: 1.55; color: var(--muted); max-width: 60ch; }
+.ptn-consent a { color: var(--brass-sh); }
+.ptn-err { margin-top: 14px; color: #b03a2e; font-size: 13.5px; }
+/* Ловушка для роботов: убираем со страницы, но не через display:none —
+   часть заполняющих скриптов такие поля пропускает. */
+.ptn-trap { position: absolute; left: -9999px; width: 1px; height: 1px; opacity: 0; }
+
+.ptn-done { padding: 60px 0 80px; max-width: 54ch; }
+.ptn-done h1 { font-family: var(--serif); font-weight: 400; font-size: 34px; margin-bottom: 12px; }
+.ptn-done p { font-size: 15.5px; line-height: 1.65; color: var(--paper-dim); margin-bottom: 24px; }
+
+/* Ссылка в подвале выделяется — иначе теряется среди документов */
+.ftr-apply { color: var(--brass-hi) !important; font-weight: 600; }
+
+@media (max-width: 620px) {
+  .ptn-grid { grid-template-columns: 1fr; }
+  .ptn-terms dl > div { grid-template-columns: 1fr; gap: 4px; }
+}

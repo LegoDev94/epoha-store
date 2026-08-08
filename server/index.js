@@ -547,6 +547,107 @@ app.get("/api/platform", (_req, res) =>
   res.json({ ...legal.PLATFORM, commission: COMMISSION(), holdDays: holdDays(), deliveryFee: DELIVERY_FEE(), stripeMode: settings.mode() })
 );
 
+/* ── Заявка стать партнёром ──
+   Форма открыта всему интернету, поэтому три заслона: ловушка для
+   роботов (поле, которое человек не видит и не заполняет), предел на
+   число заявок с одного адреса и жёсткая обрезка длины полей. */
+const APPLICATIONS = path.join(DATA_DIR, "applications.json");
+const APPLY_LIMIT = 3;
+const APPLY_WINDOW = 60 * 60 * 1000;
+const applyHits = new Map();
+
+const tooManyApplies = (ip) => {
+  const now = Date.now();
+  const fresh = (applyHits.get(ip) || []).filter((t) => now - t < APPLY_WINDOW);
+  applyHits.set(ip, fresh);
+  /* Карта не должна расти бесконечно на живом сервере */
+  if (applyHits.size > 500) for (const [k, v] of applyHits) if (!v.length) applyHits.delete(k);
+  return fresh.length >= APPLY_LIMIT;
+};
+
+app.post("/api/partner-application", async (req, res) => {
+  try {
+    const b = req.body || {};
+    /* Ловушка: настоящий человек это поле не видит */
+    if (String(b.site || "").trim()) return res.json({ ok: true });
+
+    const ip = legal.clientIp(req);
+    if (tooManyApplies(ip))
+      return res.status(429).json({ error: "Слишком много заявок. Напишите нам письмом." });
+
+    const cut = (v, max) => String(v ?? "").trim().slice(0, max);
+    const app_ = {
+      id: crypto.randomUUID(),
+      at: new Date().toISOString(),
+      status: "new",
+      ip,
+      ua: cut(req.get("user-agent"), 200),
+      lang: ["lv", "en", "ru"].includes(b.lang) ? b.lang : "lv",
+      company: cut(b.company, 160),
+      regNr: cut(b.regNr, 40),
+      person: cut(b.person, 120),
+      email: cut(b.email, 160),
+      phone: cut(b.phone, 60),
+      goods: cut(b.goods, 300),
+      link: cut(b.link, 300),
+      message: cut(b.message, 2000),
+    };
+
+    if (!app_.company || !app_.person) return res.status(400).json({ error: "REQUIRED" });
+    if (!/^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i.test(app_.email)) return res.status(400).json({ error: "EMAIL" });
+
+    applyHits.set(ip, [...(applyHits.get(ip) || []), Date.now()]);
+    await updateJson(APPLICATIONS, [], (list) => {
+      list.unshift(app_);
+      /* Заявки не копим бесконечно: старые уходят вместе с ответом */
+      if (list.length > 500) list.length = 500;
+    });
+    req.actor = { role: "guest", name: app_.company };
+    logAction(req, "partner.apply", `application:${app_.id}`, undefined, app_.email);
+
+    /* Письмо владельцу — чтобы заявка не потерялась в панели */
+    const to = settings.get("orderEmail");
+    if (to && mail.ready()) {
+      const letter = letters.applicationLetter(app_);
+      mail
+        .send({ to, subject: letter.subject, html: letter.html, text: letter.text, replyTo: app_.email })
+        .catch((e) => console.warn("[sofa] письмо о заявке:", String(e.message || e)));
+    } else {
+      console.log(`[sofa] заявка партнёра (почта не настроена): ${app_.company} · ${app_.email}`);
+    }
+
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+/** Заявки в панели: тот же список, что ушёл письмом. */
+app.get("/api/admin/applications", auth, adminOnly, async (_req, res) =>
+  res.json(await readJson(APPLICATIONS, []))
+);
+
+app.post("/api/admin/applications/:id", auth, adminOnly, async (req, res) => {
+  const status = ["new", "answered", "declined"].includes(req.body?.status) ? req.body.status : null;
+  if (!status) return res.status(400).json({ error: "Неизвестное состояние" });
+  const out = await updateJson(APPLICATIONS, [], (list) => {
+    const a = list.find((x) => x.id === req.params.id);
+    if (!a) return null;
+    a.status = status;
+    return { ...a };
+  });
+  if (!out) return res.status(404).json({ error: "Заявка не найдена" });
+  logAction(req, "partner.apply.status", `application:${req.params.id}`, undefined, status);
+  res.json(out);
+});
+
+app.delete("/api/admin/applications/:id", auth, adminOnly, async (req, res) => {
+  const list = await readJson(APPLICATIONS, []);
+  await writeJson(APPLICATIONS, list.filter((a) => a.id !== req.params.id));
+  logAction(req, "partner.apply.delete", `application:${req.params.id}`, undefined, undefined);
+  res.json({ ok: true });
+});
+
 /* ── Заказ: сначала регистрируем, потом ведём на оплату ──
    Суммы считает сервер по своему каталогу — клиенту не доверяем. */
 const DELIVERY_FEE = () => settings.get("deliveryFee");

@@ -1153,3 +1153,36 @@
 @media (max-width: 760px) {
   .adm-brand img { height: 22px; }
 }
+
+/* ── заявки с сайта ── */
+.mp-apps { margin-bottom: 26px; }
+.mp-apps h3 {
+  display: flex; align-items: center; gap: 9px; margin-bottom: 10px;
+  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--a-brass-sh);
+}
+.mp-apps-new {
+  display: grid; place-items: center; min-width: 20px; height: 20px; padding: 0 6px;
+  border-radius: 10px; background: var(--a-brass-sh); color: #fff;
+  font-size: 11px; letter-spacing: 0; font-weight: 700;
+}
+.mp-app {
+  border: 1px solid var(--a-line); border-radius: 10px; background: var(--a-card);
+  margin-bottom: 8px; overflow: hidden;
+}
+.mp-app-new { border-color: rgba(122, 97, 54, 0.45); }
+.mp-app-declined { opacity: 0.6; }
+.mp-app > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 12px 15px; cursor: pointer;
+}
+.mp-app b { display: block; font-size: 14.5px; }
+.mp-app small { color: var(--a-dim); font-size: 12.5px; }
+.mp-app-body { padding: 0 15px 14px; border-top: 1px solid var(--a-line); }
+.mp-app-body dl { margin: 12px 0 14px; display: flex; flex-direction: column; gap: 7px; }
+.mp-app-body dl > div { display: grid; grid-template-columns: 130px 1fr; gap: 12px; }
+.mp-app-body dt { font-size: 12px; color: var(--a-dim); }
+.mp-app-body dd { font-size: 13.5px; white-space: pre-wrap; }
+.mp-app-body dd a { color: var(--a-brass-sh); }
+@media (max-width: 560px) {
+  .mp-app-body dl > div { grid-template-columns: 1fr; gap: 2px; }
+}

@@ -345,3 +345,41 @@ export function build(kind, order, extra = {}) {
 }
 
 export const KINDS = ["buyer-new", "buyer-paid", "admin-new", "admin-paid", "seller-paid"];
+
+/**
+ * Заявка от компании, которая хочет продавать через площадку.
+ *
+ * Письмо уходит владельцу: всё, что человек написал, — сразу перед
+ * глазами, чтобы ответить можно было прямо из почты. Поэтому в поле
+ * «ответить» ставим адрес заявителя.
+ */
+export function applicationLetter(app) {
+  const t = L.lv;
+  const rows = [
+    ["Uzņēmums", app.company],
+    ["Reģ. Nr.", app.regNr],
+    ["Kontaktpersona", app.person],
+    ["E-pasts", app.email],
+    ["Tālrunis", app.phone],
+    ["Ko pārdod", app.goods],
+    ["Saite", app.link],
+    ["Valoda", { lv: "latviešu", en: "angļu", ru: "krievu" }[lang3(app.lang)]],
+  ];
+
+  const blocks =
+    p(`Jauns pieteikums kļūt par partneri — ${esc(app.company)}.`) +
+    facts(rows) +
+    (app.message ? note(`<b>Ziņa:</b><br>${esc(app.message).replace(/\n/g, "<br>")}`) : "") +
+    note(`Saņemts ${when("lv", app.at)} · IP ${esc(app.ip || "—")}`);
+
+  const { html, text } = layout({
+    lang: "lv",
+    preheader: `${app.company} · ${app.email}`,
+    heading: "Pieteikums kļūt par partneri",
+    blocks,
+    cta: { url: `${SITE}/#/admin`, label: t.openPanel },
+    footNote: "",
+  });
+
+  return { subject: `Pieteikums partnerim — ${app.company}`, html, text };
+}
