@@ -202,10 +202,14 @@ export const Hint = ({ text }: { text: string }) => (
  *
  * Обычная ссылка не годится — сервер ждёт токен в заголовке. Приём с
  * blob-ссылкой тоже подводит: браузер отменяет запись на диск, а на iOS
- * часто не скачивает вовсе. Поэтому просим у сервера одноразовый ключ на
- * минуту и открываем обычную ссылку — дальше браузер делает всё сам.
+ * часто не скачивает вовсе. Поэтому просим у сервера ключ на минуту и
+ * жмём скрытую ссылку: страница остаётся на месте.
+ *
+ * Через location.href файл срывался на середине — переход отменяется,
+ * едва браузер видит заголовок вложения, и вместе с ним обрывалась уже
+ * начатая запись. Ссылка с download такого перехода не делает.
  */
-export async function download(path: string, _filename?: string) {
+export async function download(path: string, filename?: string) {
   const res = await fetch("api/admin/download-token", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-token": localStorage.getItem("epoha-token") || "" },
@@ -216,7 +220,14 @@ export async function download(path: string, _filename?: string) {
     throw new Error(err.error || `HTTP ${res.status}`);
   }
   const { token } = await res.json();
-  location.href = `${path}?dl=${encodeURIComponent(token)}`;
+  const a = document.createElement("a");
+  a.href = `${path}?dl=${encodeURIComponent(token)}`;
+  a.download = filename || "";
+  a.rel = "noopener";
+  a.style.display = "none";
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
 }
 
 export const copy = async (text: string) => {
