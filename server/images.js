@@ -65,16 +65,41 @@ export function init({ uploads, cache }) {
 const stemOf = (name) => name.replace(/\.[^.]+$/, "");
 const safeName = (n) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(n) && !n.includes("..");
 
+/* Прогрев идёт отдельным процессом и дописывает описания в файл —
+   сервер должен их подхватывать, а не жить со снимком на момент старта. */
+let indexRead = 0;
+const refreshIndex = () => {
+  if (Date.now() - indexRead < 10000) return;
+  indexRead = Date.now();
+  try {
+    const st = fs.statSync(INDEX);
+    if (st.mtimeMs > (index.__at || 0)) {
+      const fresh = JSON.parse(fs.readFileSync(INDEX, "utf8"));
+      index = { ...fresh, __at: st.mtimeMs };
+    }
+  } catch {
+    /* описаний ещё нет */
+  }
+};
+
 /** Что известно про фото: размеры и основной цвет (для подложки). */
-export const meta = (name) => index[stemOf(name)] || null;
-export const allMeta = () => index;
+export const meta = (name) => {
+  refreshIndex();
+  return index[stemOf(name)] || null;
+};
+export const allMeta = () => {
+  refreshIndex();
+  return index;
+};
 
 let saveTimer = null;
 const rememberMeta = (stem, data) => {
   index[stem] = { ...index[stem], ...data };
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
-    fsp.writeFile(INDEX, JSON.stringify(index), "utf8").catch(() => {});
+    const { __at, ...clean } = index;
+    void __at;
+    fsp.writeFile(INDEX, JSON.stringify(clean), "utf8").catch(() => {});
   }, 1500);
 };
 
