@@ -28,8 +28,19 @@ export interface Order {
   notes?: { at: string; by: string; text: string }[];
   shipping?: { carrier?: string; tracking?: string; url?: string };
   shippedAt?: string | null; paidOutside?: boolean; paymentMethod?: string; lang?: string;
+  /* Что и кому уже отправлено письмом — и что не ушло */
+  mail?: Record<string, { at: string; to?: string; id?: string; status?: string; error?: string }>;
 }
 
+
+/** Письма по заказу — в том порядке, в каком они случаются. */
+export const MAIL_KINDS = [
+  { kind: "buyer-new", label: "ord.mailBuyerNew" },
+  { kind: "admin-new", label: "ord.mailAdminNew" },
+  { kind: "buyer-paid", label: "ord.mailBuyerPaid" },
+  { kind: "admin-paid", label: "ord.mailAdminPaid" },
+  { kind: "seller-paid", label: "ord.mailSellerPaid" },
+] as const;
 
 export const STATUSES = ["new", "paid", "done", "cancelled", "expired"] as const;
 /* В свёрнутой строке место узкое — у «нового» подпись короче */
@@ -367,6 +378,37 @@ function OrderRow({
               ) : null}
             </div>
           </div>
+
+          {/* Письма: что ушло, а что нет — и можно послать заново */}
+          {isAdmin && (
+            <div className="ord-block">
+              <h4>{t("ord.mail")}</h4>
+              <div className="ord-mail">
+                {MAIL_KINDS.filter((k) => k.kind !== "seller-paid" || o.sellerId).map((k) => {
+                  const m = o.mail?.[k.kind];
+                  const sent = Boolean(m?.id);
+                  return (
+                    <div key={k.kind} className={`ord-mail-row ${sent ? "on" : m?.error ? "bad" : ""}`}>
+                      <i aria-hidden="true">{sent ? "✓" : m?.error ? "!" : "·"}</i>
+                      <span>
+                        <b>{t(k.label)}</b>
+                        <small>
+                          {sent
+                            ? `${m?.to || ""} · ${dateTime(m?.at || "")}`
+                            : m?.error || t("ord.mailNotSent")}
+                        </small>
+                      </span>
+                      <button className="adm-btn adm-btn-sm adm-ghost" disabled={busy}
+                        onClick={() => act(o, `api/admin/orders/${o.order}/mail`, { kind: k.kind })
+                          .then((r) => r && toast.ok(t("ord.mailSent")))}>
+                        {sent ? t("ord.mailAgain") : t("ord.mailSend")}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Отправка: перевозчик и трек-номер */}
           {isAdmin && o.delivery === "courier" && (st === "paid" || st === "done") && (

@@ -10,6 +10,15 @@ type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
 interface Field { value?: string | number; set?: boolean; origin: "panel" | "env" | "default" }
 interface ConnectBlock { at: string; mode: string; admin: string; raw: string }
+interface MailInfo {
+  ready: boolean;
+  from: string;
+  domain?: string;
+  verified?: boolean;
+  hint?: string;
+  error?: string;
+  list?: { name: string; status: string }[];
+}
 interface Health {
   mode: "live" | "test";
   connectBlock?: ConnectBlock | null;
@@ -93,11 +102,22 @@ export default function Settings({ api }: { api: Api }) {
     }
   };
 
+  /* Отправитель должен жить на подтверждённом домене — иначе Resend
+     молча откажет, и владелец узнает об этом только по жалобам. */
+  const [mailInfo, setMailInfo] = useState<MailInfo | null>(null);
+  const loadMail = useCallback(() => {
+    api("api/admin/mail")
+      .then((d) => setMailInfo(d as MailInfo))
+      .catch(() => setMailInfo(null));
+  }, [api]);
+  useEffect(loadMail, [loadMail]);
+
   const test = async (kind: "telegram" | "email") => {
     setBusy(kind);
     try {
       await api("api/admin/settings/test-notify", { method: "POST", body: JSON.stringify({ kind }) });
       toast.ok(kind === "telegram" ? t("s.soobschenieOtpravlenoV") : t("s.pismoOtpravleno"));
+      if (kind === "email") loadMail();
     } catch (e) {
       toast.err(t("s.kanalNeRabotaet"), String((e as Error).message));
     } finally {
@@ -190,6 +210,29 @@ export default function Settings({ api }: { api: Api }) {
           {secret("resendKey", t("s.klyuchResend"), t("s.dlyaPisemO"))}
           {text("orderEmail", t("s.pochtaDlyaZakazov"), t("s.kudaPrihodyatUvedomleniya"), "info@sofa.lv")}
           {text("orderFrom", t("s.otpravitel"), t("s.adresVPole"), "info@sofa.lv")}
+          {mailInfo && !mailInfo.verified && (mailInfo.hint || mailInfo.error) && (
+            <div className="mp-note mp-note-warn set-block">
+              <b>{t("s.pismaNeUjdut")}</b>
+              <p>{mailInfo.hint || mailInfo.error}</p>
+              {(mailInfo.list?.length ?? 0) > 0 && (
+                <p className="set-raw">
+                  {t("s.podtverzhdennyeDomeny")}:{" "}
+                  {(mailInfo.list || []).map((d) => `${d.name} — ${d.status}`).join(", ")}
+                </p>
+              )}
+              <div className="mp-btns">
+                <a className="adm-btn adm-btn-sm" href="https://resend.com/domains" target="_blank" rel="noopener noreferrer">
+                  {t("s.otkrytResend")}
+                </a>
+                <button className="adm-btn adm-btn-sm adm-ghost" onClick={loadMail}>
+                  {t("s.proveritSnova")}
+                </button>
+              </div>
+            </div>
+          )}
+          {mailInfo?.verified && (
+            <p className="adm-hint">{t("s.domenPodtverzhden")}: {mailInfo.domain}</p>
+          )}
           <button className="adm-btn adm-ghost adm-btn-sm" onClick={() => test("email")} disabled={busy === "email"}>
             {busy === "email" ? t("s.otpravlyaem") : t("s.otpravitTestovoePismo")}
           </button>

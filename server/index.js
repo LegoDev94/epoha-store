@@ -14,6 +14,8 @@ import { fileURLToPath } from "node:url";
 import * as connect from "./connect.js";
 import * as settings from "./settings.js";
 import * as images from "./images.js";
+import * as mail from "./mail.js";
+import * as letters from "./letters.js";
 import * as legal from "./legal.js";
 import { holdDays, orderMoney, payoutState, releaseDate, setHoldDays, toCents, toEur } from "./money.js";
 
@@ -550,86 +552,121 @@ app.get("/api/platform", (_req, res) =>
 const DELIVERY_FEE = () => settings.get("deliveryFee");
 const BASE_URL = process.env.BASE_URL || "http://72.62.112.227:8080";
 
-async function notifyOwner(order) {
-  const lines = order.items.map((i) => `• №${i.n} ${i.title} — €${i.price}`).join("\n");
+/* ── уведомления о заказе ──
+   Владельцу — в Telegram и письмом, покупателю и партнёру — письмом.
+   Одно событие приходит дважды: из вебхука Stripe и со страницы
+   успеха. Отметка об отправке лежит в самом заказе, поэтому второе
+   письмо не уйдёт даже после перезапуска сервера.
+   Почта никогда не роняет заказ: сбой отправки только пишется в
+   заказ, чтобы в панели было видно, кому написать руками. */
+
+/** Занимаем место под письмо. false — такое уже отправляли. */
+async function claimLetter(orderId, kind) {
+  return Boolean(
+    await updateJson(ORDERS, [], (list) => {
+      const o = list.find((x) => x.id === orderId);
+      if (!o) return false;
+      o.mail = o.mail || {};
+      if (o.mail[kind]?.id) return false;
+      o.mail[kind] = { at: new Date().toISOString(), status: "sending" };
+      return true;
+    })
+  );
+}
+
+async function recordLetter(orderId, kind, result) {
+  await updateJson(ORDERS, [], (list) => {
+    const o = list.find((x) => x.id === orderId);
+    if (!o) return false;
+    o.mail = o.mail || {};
+    o.mail[kind] = { ...o.mail[kind], ...result, at: new Date().toISOString() };
+    return true;
+  });
+}
+
+/** Одно письмо по заказу. Ошибку не бросаем — заказ важнее письма. */
+async function letter(order, kind, to, extra = {}) {
+  const addr = String(to || "").trim();
+  if (!addr) return;
+  if (!mail.ready()) {
+    console.log(`[sofa] письмо ${kind} по заказу ${order.order} не отправлено: ключ Resend не задан`);
+    return;
+  }
+  if (!(await claimLetter(order.id, kind))) return;
+  try {
+    const { subject, html, text } = letters.build(kind, order, extra);
+    const id = await mail.send({
+      to: addr,
+      subject,
+      html,
+      text,
+      replyTo: legal.PLATFORM.email,
+      tags: [{ name: "kind", value: kind }],
+      idempotencyKey: `${order.id}:${kind}`,
+    });
+    await recordLetter(order.id, kind, { to: addr, id, status: "sent", error: "" });
+  } catch (e) {
+    const error = String(e.message || e);
+    await recordLetter(order.id, kind, { to: addr, status: "error", error });
+    console.warn(`[sofa] письмо ${kind} по заказу ${order.order}: ${error}`);
+  }
+}
+
+/** Короткое сообщение владельцу в Telegram — чтобы увидеть сразу. */
+async function telegramOwner(order, paid) {
+  const tg = settings.get("telegramToken");
+  const chat = settings.get("telegramChat");
   const text = [
-    `НОВЫЙ ЗАКАЗ ${order.order}`,
+    `${paid ? "ОПЛАЧЕН" : "НОВЫЙ"} ЗАКАЗ ${order.order}`,
     `${order.name} · ${order.contact}${order.email ? " · " + order.email : ""}`,
     order.delivery === "courier"
       ? `Доставка до дверей (+€${order.deliveryFee}): ${order.address}`
       : "Самовывоз со склада в Талси (бесплатно)",
     order.comment ? `Комментарий: ${order.comment}` : "",
     "",
-    lines,
-    `ИТОГО: €${order.total} · ${order.status === "paid" ? "оплачен" : "ожидает оплаты"}`,
+    order.items.map((i) => `• №${i.n} ${i.title} — €${i.price}`).join("\n"),
+    `ИТОГО: €${order.total}${order.sellerType === "partner" ? ` · партнёр ${order.sellerName}` : ""}`,
   ]
     .filter(Boolean)
     .join("\n");
 
-  const tg = settings.get("telegramToken");
-  const chat = settings.get("telegramChat");
-  if (tg && chat) {
-    try {
-      await fetch(`https://api.telegram.org/bot${tg}/sendMessage`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: chat, text }),
-      });
-    } catch (e) {
-      console.warn("[vm] telegram:", String(e.message || e));
-    }
+  if (!tg || !chat) {
+    if (!mail.ready()) console.log("[sofa] заказ (уведомления не настроены):\n" + text);
+    return;
   }
-  const resend = settings.get("resendKey");
-  const to = settings.get("orderEmail");
-  if (resend && to) {
-    try {
-      await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
-        body: JSON.stringify({
-          from: settings.get("orderFrom"),
-          to,
-          subject: `Заказ ${order.order} — €${order.total}`,
-          text,
-        }),
-      });
-    } catch (e) {
-      console.warn("[vm] resend:", String(e.message || e));
-    }
+  try {
+    await fetch(`https://api.telegram.org/bot${tg}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chat, text }),
+    });
+  } catch (e) {
+    console.warn("[sofa] telegram:", String(e.message || e));
   }
-  if (!tg && !resend) console.log("[vm] заказ (уведомления не настроены):\n" + text);
 }
 
-/** Партнёру пишем только об оплаченном заказе — до оплаты отгружать нечего. */
-async function notifySeller(order) {
-  if (!order.sellerId || order.status !== "paid") return;
-  const seller = (await loadSellers()).find((s) => s.id === order.sellerId);
-  const to = seller?.company?.email || seller?.contact || "";
-  const resend = settings.get("resendKey");
-  const text = [
-    `Apmaksāts pasūtījums ${order.order} (sofa.lv)`,
-    order.items.map((i) => `• №${i.n} ${i.title} — €${i.price}`).join("\n"),
-    order.delivery === "courier"
-      ? `Piegāde līdz durvīm (organizē sofa.lv): ${order.address}`
-      : "Izņemšana Talsos",
-    `Pircējs: ${order.name} · ${order.contact} · ${order.email}`,
-    `Jums izmaksājamā summa: €${toEur(order.partnerNetCents)} (preces cena mīnus SOFA.LV komisija ${order.commissionBps / 100} %)`,
-    `Izmaksa — ne agrāk kā ${holdDays()} dienas pēc preces nodošanas pircējam.`,
-  ].join("\n");
-  if (resend && to) {
-    await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", Authorization: `Bearer ${resend}` },
-      body: JSON.stringify({
-        from: settings.get("orderFrom"),
-        to,
-        subject: `sofa.lv · ${order.order}`,
-        text,
-      }),
-    }).catch((e) => console.warn("[sofa] письмо партнёру:", String(e.message || e)));
-  } else {
-    console.log(`[sofa] партнёру ${to || order.sellerId} (почта не настроена):\n${text}`);
-  }
+/** Заказ зарегистрирован: покупателю — со ссылкой на оплату, владельцу — сводка. */
+async function notifyNew(order, payUrl) {
+  await telegramOwner(order, false);
+  await Promise.all([
+    letter(order, "admin-new", settings.get("orderEmail")),
+    letter(order, "buyer-new", order.email, { payUrl, reserveMin: RESERVE_MIN() }),
+  ]);
+}
+
+/** Оплата получена: подтверждение покупателю, сводка владельцу, задание партнёру. */
+async function notifyPaid(order) {
+  await telegramOwner(order, true);
+  const seller = order.sellerId
+    ? (await loadSellers()).find((s) => s.id === order.sellerId)
+    : null;
+  await Promise.all([
+    letter(order, "admin-paid", settings.get("orderEmail")),
+    letter(order, "buyer-paid", order.email),
+    seller
+      ? letter(order, "seller-paid", seller.company?.email || seller.email || seller.contact)
+      : Promise.resolve(),
+  ]);
 }
 
 /** Ссылка на оплату. Товар партнёра — direct charge на его аккаунт. */
@@ -764,7 +801,6 @@ app.post("/api/orders", async (req, res) => {
       list.unshift(order);
     });
     await reserveItems(items.map((i) => i.id), id);
-    notifyOwner(order);
 
     let payUrl = null;
     let payError = "";
@@ -781,6 +817,10 @@ app.post("/api/orders", async (req, res) => {
         console.warn("[sofa] stripe:", payError);
       }
     }
+    /* Письма — после того, как ссылка на оплату известна: покупателю
+       она нужна прямо в письме. Ответ не ждёт отправки. */
+    notifyNew(order, payUrl).catch((e) => console.warn("[sofa] уведомления:", String(e.message || e)));
+
     res.json({ order: order.order, total: order.total, payUrl, payError });
   } catch (e) {
     res.status(500).json({ error: String(e.message || e) });
@@ -805,8 +845,7 @@ async function markPaid(match, info = {}) {
   });
   if (changed) {
     await releaseItems(changed.items.map((i) => i.id), { sold: true });
-    notifyOwner(changed);
-    notifySeller(changed).catch(() => {});
+    notifyPaid(changed).catch((e) => console.warn("[sofa] уведомления:", String(e.message || e)));
   }
   return changed;
 }
@@ -1398,21 +1437,92 @@ app.post("/api/admin/settings/test-notify", auth, adminOnly, async (req, res) =>
       const d = await r.json();
       if (!d.ok) return res.status(400).json({ error: d.description || "Telegram отказал" });
     } else {
-      const key = settings.get("resendKey");
       const to = settings.get("orderEmail");
-      if (!key || !to) return res.status(400).json({ error: "Не заданы ключ Resend и адрес для заказов" });
-      const r = await fetch("https://api.resend.com/emails", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${key}` },
-        body: JSON.stringify({ from: settings.get("orderFrom"), to, subject: "SOFA.LV — проверка", text }),
+      if (!mail.ready() || !to)
+        return res.status(400).json({ error: "Не заданы ключ Resend и адрес для заказов" });
+      /* Шлём настоящее письмо, а не голый текст: заодно видно, как оно
+         выглядит в почте и не попадает ли в спам. */
+      const sample = letters.build("admin-new", SAMPLE_ORDER(), {});
+      await mail.send({
+        to,
+        subject: `SOFA.LV — проверка почты`,
+        html: sample.html,
+        text: `${text}\n\n${sample.text}`,
+        replyTo: legal.PLATFORM.email,
       });
-      const d = await r.json();
-      if (d.error) return res.status(400).json({ error: d.error.message || "Resend отказал" });
     }
     res.json({ ok: true });
   } catch (e) {
     res.status(400).json({ error: String(e.message || e) });
   }
+});
+
+/** Заказ-образец для пробного письма — настоящих данных не трогаем. */
+const SAMPLE_ORDER = () => ({
+  id: "sample",
+  order: "VM-000000",
+  at: new Date().toISOString(),
+  paidAt: new Date().toISOString(),
+  status: "new",
+  items: [{ id: 0, n: "000", price: 240, title: "Pārbaudes prece", cents: 24000 }],
+  subtotal: 240,
+  deliveryFee: 0,
+  total: 240,
+  commissionCents: 4800,
+  commissionBps: 2000,
+  partnerNetCents: 19200,
+  sellerType: "shop",
+  sellerName: "",
+  delivery: "pickup",
+  name: "Pārbaude",
+  contact: "+371 20 000 000",
+  email: settings.get("orderEmail") || legal.PLATFORM.email,
+  address: "",
+  comment: "",
+  lang: "lv",
+});
+
+/** Состояние почты: чем и с какого адреса шлём, что мешает. */
+app.get("/api/admin/mail", auth, adminOnly, async (_req, res) => {
+  const info = await mail.domains();
+  res.json({
+    ready: mail.ready(),
+    from: mail.sender(),
+    orderEmail: settings.get("orderEmail"),
+    ...info,
+  });
+});
+
+/** Отправить письмо по заказу заново — когда первое не ушло. */
+app.post("/api/admin/orders/:num/mail", auth, adminOnly, async (req, res) => {
+  const kind = String(req.body?.kind || "");
+  if (!letters.KINDS.includes(kind)) return res.status(400).json({ error: "Неизвестное письмо" });
+  const list = await readJson(ORDERS, []);
+  const order = list.find((o) => o.order === req.params.num);
+  if (!order) return res.status(404).json({ error: "Заказ не найден" });
+
+  let to = "";
+  if (kind.startsWith("buyer")) to = order.email;
+  else if (kind.startsWith("admin")) to = settings.get("orderEmail");
+  else if (order.sellerId) {
+    const s = (await loadSellers()).find((x) => x.id === order.sellerId);
+    to = s?.company?.email || s?.email || s?.contact || "";
+  }
+  if (!to) return res.status(400).json({ error: "Некому отправлять: адрес не заполнен" });
+
+  /* Снимаем прежнюю отметку — иначе повтор посчитают уже отправленным */
+  await updateJson(ORDERS, [], (l) => {
+    const o = l.find((x) => x.order === req.params.num);
+    if (o?.mail) delete o.mail[kind];
+    return true;
+  });
+  await letter(order, kind, to, { reserveMin: RESERVE_MIN() });
+
+  const after = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
+  logAction(req, "order.mail", `order:${req.params.num}`, undefined, kind);
+  const state = after?.mail?.[kind];
+  if (state?.error) return res.status(400).json({ error: state.error });
+  res.json({ ok: true, mail: after?.mail || {} });
 });
 
 /** Ключ на скачивание конкретного файла. */
@@ -1557,6 +1667,17 @@ app.delete("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
 
 /* Ручная отметка статуса заказа из админки */
 app.post("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
+  /* «Оплачен» из выпадающего списка — то же событие, что и оплата
+     картой: товар должен стать проданным, а письма — уйти. Поэтому
+     ведём его через общую воронку, а не переписываем статус руками. */
+  if (String(req.body?.status || "") === "paid") {
+    const paid = await markPaid({ order: req.params.num });
+    if (paid) {
+      logAction(req, "order.status", `order:${paid.order}`, "new", "paid");
+      return res.json({ ...paid, releaseAt: releaseDate(paid.deliveredAt), payoutState: payoutState(paid) });
+    }
+  }
+
   const out = await updateJson(ORDERS, [], (list) => {
     const o = list.find((x) => x.order === req.params.num);
     if (!o) return null;
