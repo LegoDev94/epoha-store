@@ -1484,10 +1484,20 @@ const SAMPLE_ORDER = () => ({
 /** Состояние почты: чем и с какого адреса шлём, что мешает. */
 app.get("/api/admin/mail", auth, adminOnly, async (_req, res) => {
   const info = await mail.domains();
+  /* Ключ «только отправка» не даёт узнать состояние домена — тогда
+     смотрим на то, что важнее: чем кончились последние отправки. */
+  const orders = (await readJson(ORDERS, [])).slice(0, 20);
+  const marks = orders
+    .flatMap((o) => Object.entries(o.mail || {}).map(([kind, m]) => ({ ...m, kind, order: o.order })))
+    .sort((a, b) => String(b.at).localeCompare(String(a.at)));
+  const lastError = marks.find((m) => m.error);
   res.json({
     ready: mail.ready(),
     from: mail.sender(),
     orderEmail: settings.get("orderEmail"),
+    sentRecently: marks.filter((m) => m.id).length,
+    lastSent: marks.find((m) => m.id) || null,
+    lastError: lastError ? { at: lastError.at, kind: lastError.kind, order: lastError.order, error: lastError.error } : null,
     ...info,
   });
 });

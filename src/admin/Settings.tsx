@@ -14,10 +14,13 @@ interface MailInfo {
   ready: boolean;
   from: string;
   domain?: string;
-  verified?: boolean;
+  verified?: boolean | null;
+  restricted?: boolean;
   hint?: string;
   error?: string;
   list?: { name: string; status: string }[];
+  sentRecently?: number;
+  lastError?: { at: string; kind: string; order: string; error: string } | null;
 }
 interface Health {
   mode: "live" | "test";
@@ -210,7 +213,20 @@ export default function Settings({ api }: { api: Api }) {
           {secret("resendKey", t("s.klyuchResend"), t("s.dlyaPisemO"))}
           {text("orderEmail", t("s.pochtaDlyaZakazov"), t("s.kudaPrihodyatUvedomleniya"), "info@sofa.lv")}
           {text("orderFrom", t("s.otpravitel"), t("s.adresVPole"), "info@sofa.lv")}
-          {mailInfo && !mailInfo.verified && (mailInfo.hint || mailInfo.error) && (
+          {mailInfo?.lastError && (
+            <div className="mp-note mp-note-warn set-block">
+              <b>{t("s.poslednePismoNeUshlo")}</b>
+              <p>{mailInfo.lastError.error}</p>
+              <p className="set-raw">{mailInfo.lastError.order} · {mailInfo.lastError.kind}</p>
+            </div>
+          )}
+          {mailInfo?.restricted && !mailInfo.lastError && (
+            <p className="adm-hint">
+              {t("s.klyuchTolkoOtpravka")}
+              {mailInfo.sentRecently ? ` · ${t("s.pisemOtpravleno")}: ${mailInfo.sentRecently}` : ""}
+            </p>
+          )}
+          {mailInfo && !mailInfo.restricted && !mailInfo.verified && (mailInfo.hint || mailInfo.error) && (
             <div className="mp-note mp-note-warn set-block">
               <b>{t("s.pismaNeUjdut")}</b>
               <p>{mailInfo.hint || mailInfo.error}</p>

@@ -29,7 +29,9 @@ function explain(status, body) {
   const msg = String(body?.message || body?.error?.message || "").trim();
   if (status === 401 || status === 403) {
     if (/domain is not verified|not verified/i.test(msg))
-      return `Домен отправителя не подтверждён в Resend. Проверьте адрес «${sender()}» и записи DNS.`;
+      return `Домен отправителя не подтверждён в Resend. Записи DNS могут быть на месте — нажмите «Verify DNS Records» на resend.com/domains.`;
+    if (/restricted to only send/i.test(msg))
+      return "Ключ Resend выдан только на отправку — этого действия он не позволяет.";
     if (/plan includes/i.test(msg)) return `Тариф Resend не позволяет: ${msg}`;
     return "Resend не принял ключ — проверьте его в настройках.";
   }
@@ -95,6 +97,10 @@ export async function domains() {
       signal: AbortSignal.timeout(10000),
     });
     const data = await res.json().catch(() => ({}));
+    /* Ключ «только отправка» — обычное дело: список доменов им не
+       посмотреть, но письма он шлёт. Пугать этим владельца незачем. */
+    if (res.status === 401 && /restricted/i.test(String(data.name || data.message || "")))
+      return { ok: true, restricted: true, list: [], from: sender(), verified: null, hint: "" };
     if (!res.ok) return { ok: false, error: explain(res.status, data), list: [] };
     const list = (data.data || []).map((d) => ({
       name: d.name,
