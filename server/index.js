@@ -602,7 +602,10 @@ async function letter(order, kind, to, extra = {}) {
       text,
       replyTo: legal.PLATFORM.email,
       tags: [{ name: "kind", value: kind }],
-      idempotencyKey: `${order.id}:${kind}`,
+      /* Повтор того же письма Resend отбрасывает сам. При ручной
+         пересылке из панели ключ меняем — иначе вместо нового письма
+         вернётся старое. */
+      idempotencyKey: `${order.id}:${kind}${extra.again ? ":" + extra.again : ""}`,
     });
     await recordLetter(order.id, kind, { to: addr, id, status: "sent", error: "" });
   } catch (e) {
@@ -648,10 +651,10 @@ async function telegramOwner(order, paid) {
 /** Заказ зарегистрирован: покупателю — со ссылкой на оплату, владельцу — сводка. */
 async function notifyNew(order, payUrl) {
   await telegramOwner(order, false);
-  await Promise.all([
-    letter(order, "admin-new", settings.get("orderEmail")),
-    letter(order, "buyer-new", order.email, { payUrl, reserveMin: RESERVE_MIN() }),
-  ]);
+  /* По одному письму за раз: Resend на младших тарифах принимает
+     два запроса в секунду, а залпом уходило бы четыре. */
+  await letter(order, "buyer-new", order.email, { payUrl, reserveMin: RESERVE_MIN() });
+  await letter(order, "admin-new", settings.get("orderEmail"));
 }
 
 /** Оплата получена: подтверждение покупателю, сводка владельцу, задание партнёру. */
@@ -660,13 +663,9 @@ async function notifyPaid(order) {
   const seller = order.sellerId
     ? (await loadSellers()).find((s) => s.id === order.sellerId)
     : null;
-  await Promise.all([
-    letter(order, "admin-paid", settings.get("orderEmail")),
-    letter(order, "buyer-paid", order.email),
-    seller
-      ? letter(order, "seller-paid", seller.company?.email || seller.email || seller.contact)
-      : Promise.resolve(),
-  ]);
+  await letter(order, "buyer-paid", order.email);
+  if (seller) await letter(order, "seller-paid", seller.company?.email || seller.email || seller.contact);
+  await letter(order, "admin-paid", settings.get("orderEmail"));
 }
 
 /** Ссылка на оплату. Товар партнёра — direct charge на его аккаунт. */
@@ -1516,7 +1515,7 @@ app.post("/api/admin/orders/:num/mail", auth, adminOnly, async (req, res) => {
     if (o?.mail) delete o.mail[kind];
     return true;
   });
-  await letter(order, kind, to, { reserveMin: RESERVE_MIN() });
+  await letter(order, kind, to, { reserveMin: RESERVE_MIN(), again: Date.now() });
 
   const after = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
   logAction(req, "order.mail", `order:${req.params.num}`, undefined, kind);
