@@ -597,7 +597,7 @@ function Footer({ t }: { t: T }) {
         <div className="ftr-grid">
           <div>
             <div className="ftr-logo">
-              <Logo h={36} />
+              <Logo h={34} tone="light" />
             </div>
             <p>{t("ftr.about")}</p>
           </div>

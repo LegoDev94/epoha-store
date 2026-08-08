@@ -177,7 +177,11 @@ export function layout({ lang, preheader, heading, blocks, cta, footNote }) {
 <tr><td align="center">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;">
     <tr><td style="padding:0 4px 18px;">
-      <a href="${site}" style="text-decoration:none;color:${C.dark};font:600 15px/1 Georgia,'Times New Roman',serif;letter-spacing:.22em;text-transform:uppercase;">${PLATFORM.brand}</a>
+      <!-- Картинки в письмах часто выключены, поэтому подпись картинки
+           повторяет название магазина: шапка читается и без логотипа. -->
+      <a href="${site}" style="text-decoration:none;color:${C.dark};font:600 15px/1 Georgia,'Times New Roman',serif;letter-spacing:.22em;text-transform:uppercase;">
+        <img src="${site}/logo/sofa-360.png" width="128" height="33" alt="${PLATFORM.brand}" style="display:block;border:0;height:33px;width:auto;">
+      </a>
     </td></tr>
     <tr><td style="background:${C.card};border:1px solid ${C.hair};border-radius:14px;padding:26px 24px;">
       <h1 style="margin:0 0 16px;font:400 23px/1.28 Georgia,'Times New Roman',serif;color:${C.ink};">${esc(heading)}</h1>

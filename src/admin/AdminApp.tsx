@@ -8,8 +8,9 @@ import Settings from "./Settings";
 import { LangProvider, LangSwitch, useFmt, useT } from "./lang";
 import { Thumb, Toasts, ago, useToast } from "./ui";
 import "./admin.css";
+import { Logo } from "../Logo";
 
-/* ═══ Панель маркетплейса VINTAGE MĒBELES ═══
+/* ═══ Панель маркетплейса SOFA.LV ═══
    Роли: администратор площадки (всё) и продавец (свои товары и продажи).
    Комиссия площадки удерживается с каждой проданной позиции. */
 
@@ -171,7 +172,7 @@ function Login({ onIn }: { onIn: (token: string, me: Me) => void }) {
   return (
     <div className="adm-login">
       <form onSubmit={submit}>
-        <h1>VINTAGE MĒBELES</h1>
+        <h1 className="adm-login-logo"><Logo h={30} /></h1>
         <p className="adm-login-sub">{t("log.sub")}</p>
         <input value={login} onChange={(e) => setLogin(e.target.value)} placeholder={t("log.login")} autoFocus />
         <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t("log.pw")} />
@@ -739,7 +740,7 @@ function Panel() {
   return (
     <div className="adm">
       <header className="adm-top">
-        <b>VINTAGE MĒBELES</b>
+        <b className="adm-brand"><Logo h={26} /></b>
         {sandbox && <span className="adm-sandbox" title="Платежи идут в песочнице Stripe">SANDBOX</span>}
         <span className={`adm-role adm-role-${me.role}`}>
           {isAdmin ? t("role.admin") : `продавец · ${me.name}`}

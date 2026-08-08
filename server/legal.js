@@ -191,8 +191,14 @@ export async function acceptancePdf({ acceptance, seller }) {
     pdf.moveDown(0.5);
   };
 
-  /* шапка */
-  F("head").fontSize(9).fillColor("#7a6136").text(PLATFORM.brand.toUpperCase(), { characterSpacing: 2 });
+  /* шапка: логотип, а если файла нет — прежняя надпись */
+  const logo = path.join(__dirname, "..", "public", "logo", "sofa-480.png");
+  if (fs.existsSync(logo)) {
+    pdf.image(logo, pdf.x, pdf.y, { width: 116 });
+    pdf.y += 34;
+  } else {
+    F("head").fontSize(9).fillColor("#7a6136").text(PLATFORM.brand.toUpperCase(), { characterSpacing: 2 });
+  }
   F("body").fontSize(8.5).fillColor("#555").text(
     `${PLATFORM.legalName} · Reģ. Nr. ${PLATFORM.regNr} · PVN Nr. ${PLATFORM.vatNr} · ${PLATFORM.address}`
   );

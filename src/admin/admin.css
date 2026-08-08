@@ -116,6 +116,7 @@
   font-family: "Prata", Georgia, serif;
   font-weight: 400;
   font-size: 20px;
+  display: flex; align-items: center;
   letter-spacing: 0.04em;
 }
 .adm-top nav { display: flex; gap: 6px; margin-right: auto; }
@@ -1145,3 +1146,10 @@
 .set-mode-test .seg button.on { background: #8a6a12; }
 .set-block { margin-bottom: 14px; }
 .set-raw { font-size: 11.5px; color: var(--a-dim); font-family: ui-monospace, monospace; }
+
+/* ── логотип в панели ── */
+.adm-brand img { height: 26px; width: auto; }
+.adm-login-logo { display: flex; justify-content: center; margin: 0 0 2px; }
+@media (max-width: 760px) {
+  .adm-brand img { height: 22px; }
+}
