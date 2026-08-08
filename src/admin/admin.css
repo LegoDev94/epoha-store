@@ -979,10 +979,11 @@
   border: 0; border-radius: 8px; background: none; cursor: pointer; font: inherit; font-size: 13px;
 }
 .ord-menu button:hover { background: rgba(122, 97, 54, 0.1); }
-/* У нижних строк списка меню разворачивается вверх, чтобы не уходить
-   за край окна. */
-.gd:nth-last-child(-n + 3) .ord-menu,
-.ord:nth-last-child(-n + 2) .ord-menu { top: auto; bottom: calc(100% + 6px); }
+/* Меню разворачивается вверх там, где внизу места нет: в раскрытой
+   карточке заказа кнопка стоит в самом низу, а в списке товаров вниз
+   не помещаются последние строки. */
+.ord.open .ord-menu,
+.gd:nth-last-child(-n + 3) .ord-menu { top: auto; bottom: calc(100% + 6px); }
 .ord-menu .danger { color: var(--a-danger); border-top: 1px solid var(--a-line); border-radius: 0 0 8px 8px; margin-top: 4px; }
 .ord-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 
