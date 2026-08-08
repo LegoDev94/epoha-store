@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as connect from "./connect.js";
 import * as settings from "./settings.js";
+import * as images from "./images.js";
 import * as legal from "./legal.js";
 import { holdDays, orderMoney, payoutState, releaseDate, setHoldDays, toCents, toEur } from "./money.js";
 
@@ -32,6 +33,7 @@ const UA =
 
 fs.mkdirSync(UPLOADS, { recursive: true });
 settings.init(DATA_DIR);
+images.init({ uploads: UPLOADS, cache: path.join(DATA_DIR, "cache") });
 setHoldDays(() => settings.get("holdDays"));
 if (!fs.existsSync(STORE)) {
   fs.copyFileSync(SEED, STORE);
@@ -299,12 +301,25 @@ const guessCat = (title, desc = "") => {
 };
 
 async function downloadImage(url, base, i) {
-  const res = await fetch(url, { headers: { "User-Agent": UA } });
+  const res = await fetch(url, {
+    headers: { "User-Agent": UA },
+    signal: AbortSignal.timeout(15000), // зависший источник не должен держать импорт
+  });
   if (!res.ok) throw new Error(`image ${res.status}`);
+  if (!/^image\//.test(res.headers.get("content-type") || "")) throw new Error("это не изображение");
+  const len = Number(res.headers.get("content-length") || 0);
+  if (len > 25e6) throw new Error("файл слишком большой");
+
   const buf = Buffer.from(await res.arrayBuffer());
-  const ext = (url.match(/\.(jpe?g|png|webp)/i)?.[1] || "jpg").toLowerCase();
-  const name = `${base}-${i}.${ext === "jpeg" ? "jpg" : ext}`;
-  await fsp.writeFile(path.join(UPLOADS, name), buf);
+  if (buf.length > 25e6) throw new Error("файл слишком большой");
+
+  /* Аукцион отдаёт снимки как есть — бывают PNG по 600 КБ. Приводим к
+     единому виду сразу, иначе тяжесть осядет на диске и на витрине.
+     Отпечаток содержимого в имени: повторный импорт того же лота
+     не должен подменять файл, который браузеры кэшируют надолго. */
+  const mark = crypto.createHash("sha1").update(buf).digest("hex").slice(0, 8);
+  const name = await images.normalize(buf, `${base}-${i}-${mark}`);
+  images.warm(name).catch(() => {});
   return `/uploads/${name}`;
 }
 
@@ -481,13 +496,11 @@ app.use((req, res, next) =>
   WEBHOOK_PATHS.includes(req.path) ? next() : jsonBody(req, res, next)
 );
 
+/* Файл держим в памяти и сохраняем уже обработанным: снимок с телефона
+   весит 5–12 МБ, на диске ему делать нечего. */
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: (_req, _file, cb) => cb(null, UPLOADS),
-    filename: (_req, file, cb) =>
-      cb(null, `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}${path.extname(file.originalname) || ".jpg"}`),
-  }),
-  limits: { fileSize: 12 * 1024 * 1024 },
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 25 * 1024 * 1024, files: 8 },
 });
 
 /* Витрина показывает товар партнёра только когда партнёр проверен
@@ -498,7 +511,12 @@ app.get("/api/products", async (_req, res) => {
   res.json(
     list
       .filter((p) => !p.hidden && !p.archived && (!p.sellerId || live.has(p.sellerId)))
-      .map(({ reservedBy, reservedUntil, ...p }) => p)
+      .map(({ reservedBy, reservedUntil, ...p }) => ({
+        ...p,
+        /* размеры и основной цвет каждой фотографии — для подложки
+           и чтобы вёрстка не прыгала при загрузке */
+        img: (p.images || []).map((u) => images.meta(u.split("/").pop() || "")).filter(Boolean),
+      }))
   );
 });
 
@@ -2079,8 +2097,19 @@ app.post("/api/admin/import", auth, adminOnly, async (req, res) => {
   }
 });
 
-app.post("/api/admin/upload", auth, upload.array("files", 8), (req, res) => {
-  res.json({ images: (req.files || []).map((f) => `/uploads/${f.filename}`) });
+app.post("/api/admin/upload", auth, upload.array("files", 8), async (req, res) => {
+  try {
+    const saved = [];
+    for (const f of req.files || []) {
+      const base = `up-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const name = await images.normalize(f.buffer, base);
+      saved.push(`/uploads/${name}`);
+      images.warm(name).catch(() => {});
+    }
+    res.json({ images: saved });
+  } catch (e) {
+    res.status(400).json({ error: `Не удалось обработать фото: ${String(e.message || e)}` });
+  }
 });
 
 app.post("/api/admin/translate", auth, async (req, res) => {
@@ -2197,7 +2226,37 @@ app.get("/api/admin/orders", auth, async (req, res) => {
   );
 });
 
+/* Варианты фотографий: /i/v1/w640/up-123.webp — готовится при первом
+   запросе и дальше отдаётся с диска. Пресеты и форматы только из
+   белого списка: иначе чужой запрос нагенерировал бы что угодно.
+
+   Важно: этот обработчик никогда не отвечает ошибкой сервера и никогда
+   не передаёт запрос дальше — иначе в теге <img> окажется страница
+   сайта. Не получилось — отдаём оригинал. */
+app.get("/i/:version/:preset/:file", async (req, res) => {
+  const m = String(req.params.file).match(/^(.+)\.(webp|avif)$/i);
+  const w = Number(String(req.params.preset).replace(/^w/, ""));
+  if (!m || req.params.version !== images.VERSION || !images.WIDTHS.includes(w))
+    return res.status(404).end();
+
+  const [, stem, fmt] = m;
+  const source = images.findSource(stem);
+  if (!source) return res.status(404).end();
+
+  try {
+    const file = await images.variant(source, w, fmt.toLowerCase());
+    if (!file) return res.redirect(302, `/uploads/${source}`);
+    res.type(images.FORMATS[fmt.toLowerCase()]);
+    res.set("Cache-Control", "public, max-age=31536000, immutable");
+    return res.sendFile(file);
+  } catch {
+    return res.redirect(302, `/uploads/${source}`);
+  }
+});
+
 app.use("/uploads", express.static(UPLOADS, { maxAge: "30d", immutable: true }));
+/* Несуществующее фото должно быть «нет файла», а не страницей сайта */
+app.use("/uploads", (_req, res) => res.status(404).end());
 app.use(express.static(DIST, { maxAge: "1h" }));
 app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(path.join(DIST, "index.html")));
 

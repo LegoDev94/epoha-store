@@ -9,6 +9,7 @@ import {
 } from "./data/catalog";
 import { LANGS, detectLang, localeOf, makeT, type T } from "./i18n";
 import { Logo } from "./Logo";
+import { Photo, SIZES } from "./Photo";
 import { Select } from "./ui/Select";
 
 const AdminApp = lazy(() => import("./admin/AdminApp"));
@@ -96,6 +97,10 @@ function useSellers(): SellerInfo[] {
   }, []);
   return list;
 }
+/* На тач-экранах наведения не бывает: второй кадр карточки там только
+   тратит трафик, поэтому проверяем возможность один раз. */
+const hoverable = typeof matchMedia === "function" ? matchMedia("(hover: hover)").matches : true;
+
 const sellerOf = (lot: Lot | undefined, sellers: SellerInfo[]) =>
   lot?.sellerId ? sellers.find((s) => s.id === lot.sellerId) || null : null;
 
@@ -359,16 +364,17 @@ function LotCard({
         <Heart on={favs.has(l.id)} />
       </button>
       <div className="lot-imgs">
-        <img src={l.images[0]} alt={tr.title} loading="lazy" width={760} height={570} />
-        {l.images[1] && (
-          <img
+        <Photo src={l.images[0]} alt={tr.title} sizes={SIZES.tile} meta={l.img?.[0]} max={640} />
+        {/* Второй кадр показывается только при наведении — на телефоне
+            наведения нет, и грузить его там незачем. */}
+        {l.images[1] && hoverable && (
+          <Photo
             className="alt"
             src={l.images[1]}
             alt=""
-            loading="lazy"
-            width={760}
-            height={570}
-            aria-hidden="true"
+            sizes={SIZES.tile}
+            meta={l.img?.[1]}
+            max={640}
           />
         )}
       </div>
@@ -959,13 +965,13 @@ function LotPage({
           >
             {lot.images.map((im, i) => (
               <figure className="pd-photo" key={im + i} onClick={() => setZoomAt(i)}>
-                <img
+                <Photo
                   src={im}
                   alt={`${tr.title} ${i + 1}`}
-                  width={880}
-                  height={660}
-                  fetchPriority={i === 0 ? "high" : undefined}
-                  loading={i === 0 ? undefined : "lazy"}
+                  sizes={SIZES.product}
+                  meta={lot.img?.[i]}
+                  max={1280}
+                  priority={i === 0}
                 />
                 <figcaption className="pd-zoomhint" aria-hidden="true">
                   <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="1.8">
@@ -986,7 +992,7 @@ function LotPage({
                   onClick={() => goSlide(i)}
                   aria-label={`${tr.title} ${i + 1}`}
                 >
-                  <img src={im} alt="" loading="lazy" />
+                  <Photo src={im} alt="" sizes={SIZES.thumb} meta={lot.img?.[i]} max={320} />
                 </button>
               ))}
             </div>

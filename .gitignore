@@ -17,3 +17,4 @@ data/sellers.json
 data/settings.json
 data/audit.log
 data/uploads/
+data/cache/

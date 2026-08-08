@@ -20,6 +20,8 @@ export interface Lot {
   createdAt?: string;
   /** null / отсутствует — товар самой площадки, иначе продавец-партнёр */
   sellerId?: string | null;
+  /** размеры и основной цвет каждой фотографии — приходят с сервера */
+  img?: { w: number; h: number; tone: string }[];
   tr: Record<Lang, Tr>;
 }
 

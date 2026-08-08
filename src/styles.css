@@ -1617,3 +1617,7 @@ html::-webkit-scrollbar-thumb {
   font-family: var(--sans); font-size: 12.5px; line-height: 1.4; text-align: center;
 }
 .sandbox-bar b { letter-spacing: 0.16em; color: #e2c78a; }
+
+/* Обёртка <picture> не должна участвовать в раскладке: все размеры
+   и позиционирование заданы для самой картинки. */
+picture { display: contents; }
