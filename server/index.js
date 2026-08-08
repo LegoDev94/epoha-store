@@ -2249,7 +2249,7 @@ app.get("/i/:version/:preset/:file", async (req, res) => {
   if (!source) return res.status(404).end();
 
   try {
-    const file = await images.variant(source, w, fmt.toLowerCase());
+    const file = await images.variant(stem, w, fmt.toLowerCase());
     if (!file) return res.redirect(302, source.url);
     res.type(images.FORMATS[fmt.toLowerCase()]);
     res.set("Cache-Control", "public, max-age=31536000, immutable");
