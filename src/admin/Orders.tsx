@@ -262,6 +262,7 @@ export default function Orders({
             busy={busy === o.order}
             sellerName={sellerName}
             act={act}
+            preview={preview}
             ask={ask}
             toast={toast}
             onRefund={() => setRefund(o)}
@@ -274,11 +275,12 @@ export default function Orders({
 
 /* ── строка списка с раскрытием ────────────────────────────────── */
 function OrderRow({
-  o, open, onToggle, isAdmin, busy, sellerName, act, ask, toast, onRefund,
+  o, open, onToggle, isAdmin, busy, sellerName, act, preview, ask, toast, onRefund,
 }: {
   o: Order; open: boolean; onToggle: () => void; isAdmin: boolean; busy: boolean;
   sellerName: (id?: string | null) => string;
   act: (o: Order, url: string, body?: any, method?: string) => Promise<any>;
+  preview: (num: string, kind: string) => void;
   ask: (opts: any) => Promise<boolean>;
   toast: ReturnType<typeof useToast>;
   onRefund: () => void;
