@@ -237,3 +237,27 @@ export function ago(iso: number | null, t: (k: string, v?: Record<string, string
   if (sec < 3600) return `${Math.round(sec / 60)} мин назад`;
   return `${Math.round(sec / 3600)} ч назад`;
 }
+
+/**
+ * Миниатюра товара в списках панели.
+ *
+ * В списке товаров таких картинок сотни, и раньше каждая тянула
+ * исходник на 150–200 КБ. Здесь хватает 160 px; если облегчённого
+ * варианта не окажется, возвращаемся к исходному файлу.
+ */
+export function Thumb({ src, alt = "" }: { src: string; alt?: string }) {
+  const own = src.startsWith("/uploads/") || /^\.?\/img\//.test(src);
+  const stem = (src.split("/").pop() || "").replace(/\.[^.]+$/, "");
+  return (
+    <img
+      src={own ? `/i/v1/w160/${stem}.webp` : src}
+      alt={alt}
+      loading="lazy"
+      decoding="async"
+      onError={(e) => {
+        const el = e.currentTarget;
+        if (el.src !== src) el.src = src;
+      }}
+    />
+  );
+}

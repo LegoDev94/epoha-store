@@ -26,7 +26,12 @@ const widths = String(arg("--widths", images.WIDTHS.join(",")))
   .filter((w) => images.WIDTHS.includes(w));
 const limit = Number(arg("--limit", 0)) || Infinity;
 
-images.init({ uploads: UPLOADS, cache: path.join(DATA, "cache") });
+const STATIC = path.join(ROOT, "dist", "img");
+images.init({
+  uploads: UPLOADS,
+  cache: path.join(DATA, "cache"),
+  extra: [{ dir: STATIC, url: "/img" }],
+});
 
 const human = (b) => (b > 1e6 ? (b / 1e6).toFixed(1) + " МБ" : Math.round(b / 1024) + " КБ");
 
@@ -35,7 +40,10 @@ const run = async () => {
     console.error("sharp не установлен — обрабатывать нечем");
     process.exit(1);
   }
-  const files = (await fsp.readdir(UPLOADS)).filter((f) => /\.(jpe?g|png|webp)$/i.test(f)).slice(0, limit);
+  const photo = (f) => /\.(jpe?g|png|webp)$/i.test(f);
+  const list = async (d) => fsp.readdir(d).then((x) => x.filter(photo)).catch(() => []);
+  /* Снимки из сборки обрабатываем так же: на витрине они рядом с товарами */
+  const files = [...(await list(UPLOADS)), ...(await list(STATIC))].slice(0, limit);
   const before = await images.usage();
   console.log(`фотографий: ${files.length} · ширины: ${widths.join(", ")}`);
 

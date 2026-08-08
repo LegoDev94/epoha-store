@@ -33,7 +33,12 @@ const UA =
 
 fs.mkdirSync(UPLOADS, { recursive: true });
 settings.init(DATA_DIR);
-images.init({ uploads: UPLOADS, cache: path.join(DATA_DIR, "cache") });
+images.init({
+  uploads: UPLOADS,
+  cache: path.join(DATA_DIR, "cache"),
+  /* Снимки из сборки (обложки, подборки, первые товары) — тот же конвейер */
+  extra: [{ dir: path.join(DIST, "img"), url: "/img" }],
+});
 setHoldDays(() => settings.get("holdDays"));
 if (!fs.existsSync(STORE)) {
   fs.copyFileSync(SEED, STORE);
@@ -2245,12 +2250,12 @@ app.get("/i/:version/:preset/:file", async (req, res) => {
 
   try {
     const file = await images.variant(source, w, fmt.toLowerCase());
-    if (!file) return res.redirect(302, `/uploads/${source}`);
+    if (!file) return res.redirect(302, source.url);
     res.type(images.FORMATS[fmt.toLowerCase()]);
     res.set("Cache-Control", "public, max-age=31536000, immutable");
     return res.sendFile(file);
   } catch {
-    return res.redirect(302, `/uploads/${source}`);
+    return res.redirect(302, source.url);
   }
 });
 

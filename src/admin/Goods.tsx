@@ -8,7 +8,7 @@ import { useMemo, useState } from "react";
 import type { Category, Lot } from "../data/catalog";
 import { Select } from "../ui/Select";
 import { useFmt, useT } from "./lang";
-import { Empty, ErrorBox, Skeletons, useConfirmDialog, useToast } from "./ui";
+import { Empty, ErrorBox, Skeletons, Thumb, useConfirmDialog, useToast } from "./ui";
 
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
@@ -188,7 +188,7 @@ export default function Goods({
                 <input type="checkbox" checked={on}
                   onChange={(e) => setPicked(e.target.checked ? [...picked, p.id] : picked.filter((x) => x !== p.id))} />
               </label>
-              {p.images?.[0] ? <img src={p.images[0]} alt="" /> : <span className="gd-noimg">{t("gd.noPhotoTag")}</span>}
+              {p.images?.[0] ? <Thumb src={p.images[0]} /> : <span className="gd-noimg">{t("gd.noPhotoTag")}</span>}
               <div className="gd-main">
                 <b>{tr}</b>
                 <span className="gd-meta">

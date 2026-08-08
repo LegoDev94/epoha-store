@@ -6,7 +6,7 @@ import Goods, { type AdmLot } from "./Goods";
 import Orders, { needsAction, statusLabel, type Order } from "./Orders";
 import Settings from "./Settings";
 import { LangProvider, LangSwitch, useFmt, useT } from "./lang";
-import { Toasts, ago, useToast } from "./ui";
+import { Thumb, Toasts, ago, useToast } from "./ui";
 import "./admin.css";
 
 /* ═══ Панель маркетплейса VINTAGE MĒBELES ═══
@@ -380,7 +380,7 @@ function Editor({
           <div className="adm-imgs">
             {p.images.map((im, i) => (
               <div className="adm-img" key={im + i}>
-                <img src={im} alt="" />
+                <Thumb src={im} />
                 <button
                   className="adm-img-x"
                   title={t("a.udalitFoto")}

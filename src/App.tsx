@@ -9,7 +9,7 @@ import {
 } from "./data/catalog";
 import { LANGS, detectLang, localeOf, makeT, type T } from "./i18n";
 import { Logo } from "./Logo";
-import { Photo, SIZES } from "./Photo";
+import { Photo, SIZES, type PhotoMeta } from "./Photo";
 import { Select } from "./ui/Select";
 
 const AdminApp = lazy(() => import("./admin/AdminApp"));
@@ -130,42 +130,6 @@ type Store = ReturnType<typeof useStoredIds>;
 type CartStore = Store & { addLot: (l: Lot) => boolean };
 
 /* ── блок продавца: кто именно продаёт этот предмет ── */
-function SellerBlock({ seller, t }: { seller: SellerInfo | null; t: T }) {
-  const rows: [string, string][] = seller
-    ? [
-        [t("seller.label.name"), seller.name],
-        [t("seller.label.regNumber"), seller.regNr],
-        [t("seller.label.vatNumber"), seller.vatNr || t("seller.value.vatNotRegistered")],
-        [t("seller.label.address"), seller.address],
-      ]
-    : [
-        [t("seller.label.name"), t("seller.platform.name")],
-        [t("seller.label.regNumber"), "40203253729"],
-        [t("seller.label.vatNumber"), "LV40203253729"],
-        [t("seller.label.address"), '"Gobas", Ģibuļu pag., Talsu nov., LV-3297'],
-      ];
-  return (
-    <section className="slr">
-      <h3 className="slr-h">{t("seller.block.title")}</h3>
-      <p className="slr-sub">{seller ? t("seller.block.subtitle") : t("seller.byPlatform")}</p>
-      <dl className="slr-rows">
-        {rows.filter(([, v]) => v).map(([k, v]) => (
-          <div key={k}>
-            <dt>{k}</dt>
-            <dd>{v}</dd>
-          </div>
-        ))}
-        <div>
-          <dt>{t("seller.label.paymentProcessing")}</dt>
-          <dd>{t("seller.value.paymentProcessing")}</dd>
-        </div>
-      </dl>
-      <p className="slr-note">{t("seller.payment.note")}</p>
-      {seller && <p className="slr-note">{t("seller.contract.note")}</p>}
-    </section>
-  );
-}
-
 /* Товары разных продавцов оплачиваются на разные счета, поэтому в одном
    заказе они не уживаются — предлагаем очистить корзину. */
 function SellerConflict({
@@ -498,7 +462,7 @@ function Header({
                   const tr = l.tr[lang] ?? l.tr.lv;
                   return (
                     <button key={l.id} className="hd-drop-item" onMouseDown={() => go(`/lot/${l.id}`)}>
-                      <img src={l.images[0]} alt="" />
+                      <Photo src={l.images[0]} alt="" sizes={SIZES.row} meta={l.img?.[0]} max={160} />
                       <span>
                         <b>{tr.title}</b>
                         <i>
@@ -800,12 +764,14 @@ function Home({
       в увеличенном виде кадр таскается пальцем ── */
 function Lightbox({
   images,
+  meta,
   start,
   title,
   t,
   onClose,
 }: {
   images: string[];
+  meta?: PhotoMeta[];
   start: number;
   title: string;
   t: T;
@@ -881,10 +847,13 @@ function Lightbox({
           else if (dy > 90) onClose();
         }}
       >
-        <img
+        <Photo
           className="lb-img"
           src={images[i]}
           alt={`${title} ${i + 1}`}
+          sizes={SIZES.zoom}
+          meta={meta?.[i]}
+          priority
           onClick={toggleZoom}
           draggable={false}
         />
@@ -901,7 +870,7 @@ function Lightbox({
           <div className="lb-thumbs">
             {images.map((im, k) => (
               <button key={im + k} className={k === i ? "on" : ""} onClick={() => at(k)}>
-                <img src={im} alt="" loading="lazy" />
+                <Photo src={im} alt="" sizes={SIZES.thumb} meta={meta?.[k]} max={160} />
               </button>
             ))}
           </div>
@@ -915,7 +884,6 @@ function Lightbox({
 function LotPage({
   lot,
   lots,
-  sellers,
   favs,
   cart,
   lang,
@@ -924,7 +892,6 @@ function LotPage({
 }: {
   lot: Lot;
   lots: Lot[];
-  sellers: SellerInfo[];
   favs: Store;
   cart: CartStore;
   lang: Lang;
@@ -932,7 +899,6 @@ function LotPage({
   fmt: (n: number) => string;
 }) {
   const tr = lot.tr[lang] ?? lot.tr.lv;
-  const seller = sellerOf(lot, sellers);
   const related = lots.filter((l) => l.cat === lot.cat && l.id !== lot.id).slice(0, 3);
   const inCart = cart.has(lot.id);
   const [zoomAt, setZoomAt] = useState<number | null>(null);
@@ -1000,6 +966,7 @@ function LotPage({
           {zoomAt !== null && (
             <Lightbox
               images={lot.images}
+              meta={lot.img}
               start={zoomAt}
               title={tr.title}
               t={t}
@@ -1051,7 +1018,6 @@ function LotPage({
               <li>{t("lot.note2")}</li>
               <li>{t("lot.note3")}</li>
             </ul>
-            <SellerBlock seller={seller} t={t} />
           </aside>
         </div>
 
@@ -1122,7 +1088,14 @@ function CartPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: CartStore; 
                 const tr = l.tr[lang] ?? l.tr.lv;
                 return (
                   <div key={l.id} className="cartpg-item">
-                    <img src={l.images[0]} alt={tr.title} onClick={() => go(`/lot/${l.id}`)} />
+                    <Photo
+                      src={l.images[0]}
+                      alt={tr.title}
+                      sizes={SIZES.row}
+                      meta={l.img?.[0]}
+                      max={160}
+                      onClick={() => go(`/lot/${l.id}`)}
+                    />
                     <div className="cartpg-info" onClick={() => go(`/lot/${l.id}`)}>
                       <strong>{tr.title}</strong>
                       <small>№ {l.n} · {tr.era}</small>
@@ -1724,7 +1697,7 @@ export default function App() {
         />
       )}
       {route.view === "lot" && lot && (
-        <LotPage lot={lot} lots={lots} sellers={sellers} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
+        <LotPage lot={lot} lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
       )}
       {route.view === "favs" && <FavsPage lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
       {route.view === "cart" && <CartPage lots={lots} cart={cartApi} lang={lang} t={t} fmt={fmt} />}

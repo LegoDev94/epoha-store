@@ -8,7 +8,7 @@
  * Пока варианты не готовы (или сервер отдаёт статику), показываем
  * исходный файл: разметка остаётся рабочей в любом случае.
  */
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 
 /** Ширины должны совпадать с белым списком на сервере. */
 const WIDTHS = [160, 320, 640, 960, 1280, 1600];
@@ -23,7 +23,8 @@ export interface PhotoMeta {
 }
 
 const stem = (src: string) => (src.split("/").pop() || "").replace(/\.[^.]+$/, "");
-const isLocal = (src: string) => src.startsWith("/uploads/");
+/* Свои файлы — и загруженные фото товаров, и снимки из сборки. */
+const isLocal = (src: string) => src.startsWith("/uploads/") || /^\.?\/img\//.test(src);
 
 const srcset = (src: string, fmt: "webp" | "avif", max: number) =>
   WIDTHS.filter((w) => w <= max && (fmt === "webp" || w >= AVIF_FROM))
@@ -39,6 +40,7 @@ export function Photo({
   priority = false,
   className,
   onClick,
+  draggable,
 }: {
   src: string;
   alt: string;
@@ -50,7 +52,8 @@ export function Photo({
   /** Главное фото экрана: грузим первым и не откладываем */
   priority?: boolean;
   className?: string;
-  onClick?: () => void;
+  onClick?: (e: MouseEvent<HTMLImageElement>) => void;
+  draggable?: boolean;
 }) {
   const [loaded, setLoaded] = useState(false);
   const optimized = isLocal(src);
@@ -79,6 +82,7 @@ export function Photo({
       }}
       className={className}
       onClick={onClick}
+      draggable={draggable}
       style={meta?.tone && !loaded ? { backgroundColor: meta.tone } : undefined}
     />
   );

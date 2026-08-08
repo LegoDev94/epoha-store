@@ -46,12 +46,23 @@ export const FORMATS = { webp: "image/webp", avif: "image/avif" };
 const webpQuality = (w) => (w <= 320 ? 82 : w <= 960 ? 80 : 78);
 
 let UPLOADS = "";
+/* Где искать исходники: сначала загруженные фото товаров, затем
+   снимки из сборки — витрине они нужны такими же лёгкими. */
+let ROOTS = [];
 let CACHE = "";
 let INDEX = "";
 let index = {};
 
-export function init({ uploads, cache }) {
+export function init({ uploads, cache, extra = [] }) {
   UPLOADS = uploads;
+  ROOTS = [{ dir: path.resolve(uploads), url: "/uploads" }];
+  for (const e of extra) {
+    try {
+      if (fs.statSync(e.dir).isDirectory()) ROOTS.push({ dir: path.resolve(e.dir), url: e.url });
+    } catch {
+      /* каталога нет — не беда */
+    }
+  }
   CACHE = path.join(cache, VERSION);
   INDEX = path.join(cache, "index.json");
   fs.mkdirSync(CACHE, { recursive: true });
@@ -126,12 +137,19 @@ const slot = () =>
     else queue.push(go);
   });
 
-/** Путь к исходнику: имя может прийти без расширения. */
+/**
+ * Исходник по имени без расширения: где лежит и по какому адресу
+ * доступен. null — такого файла нет ни в одном из каталогов.
+ */
 export function findSource(stem) {
   if (!safeName(stem)) return null;
-  for (const ext of [".jpg", ".jpeg", ".png", ".webp", ""]) {
-    const p = path.join(UPLOADS, stem + ext);
-    if (path.resolve(p).startsWith(UPLOADS) && fs.existsSync(p)) return stem + ext;
+  for (const root of ROOTS) {
+    for (const ext of [".jpg", ".jpeg", ".png", ".webp", ""]) {
+      const file = stem + ext;
+      const full = path.resolve(path.join(root.dir, file));
+      if (full.startsWith(root.dir) && fs.existsSync(full))
+        return { dir: root.dir, file, url: `${root.url}/${file}` };
+    }
   }
   return null;
 }
@@ -158,8 +176,7 @@ export async function variant(name, width, fmt) {
   const job = (async () => {
     const release = await slot();
     try {
-      const src = path.join(UPLOADS, source);
-      const pipe = sharp(src, { failOn: "none", limitInputPixels: 50e6 });
+      const pipe = sharp(path.join(source.dir, source.file), { failOn: "none", limitInputPixels: 50e6 });
       const info = await pipe.metadata();
 
       /* Не растягиваем: вариант шире исходника будет тяжелее и хуже */
@@ -225,7 +242,7 @@ export async function describe(name) {
   const source = findSource(stemOf(name));
   if (!source) return null;
   try {
-    const img = sharp(path.join(UPLOADS, source), { failOn: "none", limitInputPixels: 50e6 });
+    const img = sharp(path.join(source.dir, source.file), { failOn: "none", limitInputPixels: 50e6 });
     const info = await img.metadata();
     const { dominant } = await img.stats();
     const hex = (n) => n.toString(16).padStart(2, "0");

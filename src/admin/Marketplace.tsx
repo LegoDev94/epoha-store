@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { makeT, type T } from "../i18n";
 import { useT } from "./lang";
-import { download, useToast } from "./ui";
+import { Thumb, download, useToast } from "./ui";
 
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
@@ -388,7 +388,7 @@ function PartnerActive({ t, api, onSync }: { t: T; api: Api; onSync: () => void 
               <td><b>{r.order}</b><small>{date(r.at)}</small></td>
               <td className="mp-items">
                 {r.items.map((i, k) => (
-                  <span key={k}>{i.img && <img src={i.img} alt="" />}№{i.n} {i.title}</span>
+                  <span key={k}>{i.img && <Thumb src={i.img} />}№{i.n} {i.title}</span>
                 ))}
               </td>
               <td>{money(r.grossCents)}</td>

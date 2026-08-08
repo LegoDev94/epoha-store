@@ -8,7 +8,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Select } from "../ui/Select";
 import { useFmt, useT, type AdminT } from "./lang";
-import { Empty, ErrorBox, Hint, Skeletons, copy, download, useConfirmDialog, useToast } from "./ui";
+import { Empty, ErrorBox, Hint, Skeletons, Thumb, copy, download, useConfirmDialog, useToast } from "./ui";
 
 type Api = (url: string, opts?: RequestInit) => Promise<any>;
 
@@ -344,7 +344,7 @@ function OrderRow({
               <div className="ord-items">
                 {(o.items || []).map((it, k) => (
                   <div className="ord-item" key={String(it.id) + k}>
-                    {it.img ? <img src={it.img} alt="" /> : <span className="ord-noimg" />}
+                    {it.img ? <Thumb src={it.img} /> : <span className="ord-noimg" />}
                     <span><b>{it.title}</b><i>№ {it.n}</i></span>
                     <em>{eur(it.price)}</em>
                   </div>
