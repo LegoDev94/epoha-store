@@ -9,7 +9,10 @@
  * Отдельно вырезаем сам диван — он идёт значком вкладки и картинкой
  * для ссылок в мессенджерах, где нужна квадратная картинка.
  *
- *   node server/tools/logo.js <исходник.png>
+ * Исходник лежит в /assets и на сайт не попадает — в public кладутся
+ * только готовые размеры.
+ *
+ *   node server/tools/logo.js [исходник.png]
  */
 import fs from "node:fs";
 import fsp from "node:fs/promises";
@@ -21,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..", "..");
 const OUT = path.join(ROOT, "public", "logo");
 
-const src = process.argv[2] || path.join(ROOT, "sofalogo-src.png");
+const src = process.argv[2] || path.join(ROOT, "assets", "sofalogo.png");
 const WIDTHS = [240, 360, 480, 720];
 const PNG = { compressionLevel: 9, palette: true, quality: 90 };
 
