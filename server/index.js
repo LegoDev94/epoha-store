@@ -697,13 +697,20 @@ const reserveItems = (ids, orderId) =>
     for (const p of list) if (ids.includes(p.id)) { p.reservedBy = orderId; p.reservedUntil = until; }
   });
 
-const releaseItems = (ids, { sold = false } = {}) =>
+/**
+ * Снимает резерв с предметов заказа.
+ * sold === true — заказ оплачен, предмет продан;
+ * sold === false — заказ отменён, предмет снова в продаже;
+ * без указания — отметку о продаже не трогаем.
+ */
+const releaseItems = (ids, { sold } = {}) =>
   updateJson(STORE, [], (list) => {
     for (const p of list)
       if (ids.includes(p.id)) {
         delete p.reservedBy;
         delete p.reservedUntil;
-        if (sold) p.sold = true;
+        if (sold === true) p.sold = true;
+        if (sold === false) delete p.sold;
       }
   });
 
@@ -857,7 +864,8 @@ async function closeOrder(match, status) {
     o.status = status;
     return { ...o };
   });
-  if (changed) await releaseItems(changed.items.map((i) => i.id));
+  /* Заказ закрылся без оплаты — предметы возвращаются в продажу */
+  if (changed) await releaseItems(changed.items.map((i) => i.id), { sold: false });
   return changed;
 }
 
@@ -1580,9 +1588,16 @@ app.get("/api/admin/audit", auth, adminOnly, async (req, res) =>
 
 /* ── заказ: правка, заметки, отправка, ссылка на оплату ── */
 
-/** Отменённый или удалённый заказ возвращает предметы на витрину. */
+/**
+ * Отменённый, возвращённый или удалённый заказ возвращает предметы
+ * на витрину: снимает резерв и отметку о продаже. Продажи не было —
+ * значит, вещь снова можно купить, и в каталоге ей незачем висеть
+ * с ярлыком «продано».
+ */
 const freeOrderItems = (order) =>
-  order?.items?.length ? releaseItems(order.items.map((i) => i.id)) : Promise.resolve();
+  order?.items?.length
+    ? releaseItems(order.items.map((i) => i.id), { sold: false })
+    : Promise.resolve();
 
 app.patch("/api/admin/orders/:num", auth, adminOnly, async (req, res) => {
   const b = req.body || {};

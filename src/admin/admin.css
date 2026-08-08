@@ -964,6 +964,10 @@
   display: grid; place-items: center;
 }
 .ord-more-btn::-webkit-details-marker { display: none; }
+/* Карточка с открытым меню поднимается над соседями: иначе список
+   рисует следующие карточки поверх выпавшего меню. */
+.ord:has(.ord-menu), .gd:has(details[open]) { position: relative; z-index: 60; }
+
 .ord-menu {
   position: absolute; right: 0; top: calc(100% + 6px); z-index: 40;
   min-width: 220px; padding: 6px; border-radius: 12px;
@@ -975,6 +979,10 @@
   border: 0; border-radius: 8px; background: none; cursor: pointer; font: inherit; font-size: 13px;
 }
 .ord-menu button:hover { background: rgba(122, 97, 54, 0.1); }
+/* У нижних строк списка меню разворачивается вверх, чтобы не уходить
+   за край окна. */
+.gd:nth-last-child(-n + 3) .ord-menu,
+.ord:nth-last-child(-n + 2) .ord-menu { top: auto; bottom: calc(100% + 6px); }
 .ord-menu .danger { color: var(--a-danger); border-top: 1px solid var(--a-line); border-radius: 0 0 8px 8px; margin-top: 4px; }
 .ord-quick { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
 
