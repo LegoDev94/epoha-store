@@ -37,6 +37,9 @@ const FIELDS = {
   resendKey: { type: "secret", env: "RESEND_API_KEY", def: "" },
   orderEmail: { type: "string", env: "ORDER_EMAIL", def: "" },
   orderFrom: { type: "string", env: "ORDER_FROM", def: "info@sofa.lv" },
+  /* Куда придёт ответ покупателя, если он нажмёт «Ответить». Пусто —
+     контактный адрес площадки из документов. */
+  replyTo: { type: "string", env: "ORDER_REPLY_TO", def: "" },
   deepseekKey: { type: "secret", env: "DEEPSEEK_API_KEY", def: "" },
   /* Песочница Stripe: те же сценарии, но без настоящих денег.
      Ключи боевого режима остаются в окружении сервера. */

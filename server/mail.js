@@ -21,6 +21,8 @@ const key = () => settings.get("resendKey");
 /** Отправитель. Домен должен быть подтверждён в Resend, иначе отказ. */
 export const sender = () => settings.get("orderFrom") || `${PLATFORM.brand} <info@sofa.lv>`;
 export const ready = () => Boolean(key());
+/** Адрес для ответа покупателя — он может отличаться от отправителя. */
+export const replyTo = () => settings.get("replyTo") || PLATFORM.email;
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 

@@ -600,7 +600,7 @@ async function letter(order, kind, to, extra = {}) {
       subject,
       html,
       text,
-      replyTo: legal.PLATFORM.email,
+      replyTo: mail.replyTo(),
       tags: [{ name: "kind", value: kind }],
       /* Повтор того же письма Resend отбрасывает сам. При ручной
          пересылке из панели ключ меняем — иначе вместо нового письма
@@ -1447,7 +1447,7 @@ app.post("/api/admin/settings/test-notify", auth, adminOnly, async (req, res) =>
         subject: `SOFA.LV — проверка почты`,
         html: sample.html,
         text: `${text}\n\n${sample.text}`,
-        replyTo: legal.PLATFORM.email,
+        replyTo: mail.replyTo(),
       });
     }
     res.json({ ok: true });
@@ -1495,6 +1495,7 @@ app.get("/api/admin/mail", auth, adminOnly, async (_req, res) => {
     ready: mail.ready(),
     from: mail.sender(),
     orderEmail: settings.get("orderEmail"),
+    replyTo: mail.replyTo(),
     sentRecently: marks.filter((m) => m.id).length,
     lastSent: marks.find((m) => m.id) || null,
     lastError: lastError ? { at: lastError.at, kind: lastError.kind, order: lastError.order, error: lastError.error } : null,

@@ -213,6 +213,7 @@ export default function Settings({ api }: { api: Api }) {
           {secret("resendKey", t("s.klyuchResend"), t("s.dlyaPisemO"))}
           {text("orderEmail", t("s.pochtaDlyaZakazov"), t("s.kudaPrihodyatUvedomleniya"), "info@sofa.lv")}
           {text("orderFrom", t("s.otpravitel"), t("s.adresVPole"), "info@sofa.lv")}
+          {text("replyTo", t("s.adresDlyaOtveta"), t("s.kudaPridetOtvet"), "info@sofa.lv")}
           {mailInfo?.lastError && (
             <div className="mp-note mp-note-warn set-block">
               <b>{t("s.poslednePismoNeUshlo")}</b>

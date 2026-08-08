@@ -313,6 +313,8 @@ export const DICT: Record<string, { lv: string; en: string; ru: string }> = {
   "s.poslednePismoNeUshlo": { lv: "Pēdējā vēstule netika nosūtīta", en: "The last email did not go out", ru: "Последнее письмо не ушло" },
   "s.klyuchTolkoOtpravka": { lv: "Resend atslēga ir tikai sūtīšanai — domēna stāvokli panelis nevar pārbaudīt", en: "The Resend key is send-only — the panel cannot check the domain state", ru: "Ключ Resend только на отправку — состояние домена панель проверить не может" },
   "s.pisemOtpravleno": { lv: "nosūtītas vēstules", en: "emails sent", ru: "писем отправлено" },
+  "s.adresDlyaOtveta": { lv: "Atbildes adrese", en: "Reply-to address", ru: "Адрес для ответа" },
+  "s.kudaPridetOtvet": { lv: "kur nonāks pircēja atbilde uz vēstuli", en: "where the buyer's reply lands", ru: "куда придёт ответ покупателя на письмо" },
   "s.pismaNeUjdut": { lv: "Vēstules netiks nosūtītas", en: "Emails will not go out", ru: "Письма не уйдут" },
   "s.podtverzhdennyeDomeny": { lv: "Domēni Resend kontā", en: "Domains in the Resend account", ru: "Домены в аккаунте Resend" },
   "s.otkrytResend": { lv: "Atvērt Resend", en: "Open Resend", ru: "Открыть Resend" },
