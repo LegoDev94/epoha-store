@@ -126,6 +126,20 @@ export default function Orders({
   const sum = shown.reduce((s, o) => s + (o.total || 0), 0);
   const active = q || chip || status !== "all" || delivery !== "all" || min || max;
 
+  /* Показать письмо так, как его увидит получатель. Открываем из
+     памяти: у отдельной вкладки нет нашего ключа доступа. */
+  const preview = async (num: string, kind: string) => {
+    try {
+      const r = await api(`api/admin/orders/${num}/mail/preview?kind=${kind}`);
+      const w = window.open("", "_blank", "width=720,height=900");
+      if (!w) return toast.err(t("ord.mailPreviewBlocked"));
+      w.document.write(r.html);
+      w.document.close();
+    } catch (e) {
+      toast.err(t("ui.failed"), String((e as Error).message));
+    }
+  };
+
   const act = async (o: Order, url: string, body?: any, method = "POST") => {
     setBusy(o.order);
     try {
@@ -398,6 +412,10 @@ function OrderRow({
                             : m?.error || t("ord.mailNotSent")}
                         </small>
                       </span>
+                      <button className="adm-btn adm-btn-sm adm-ghost" disabled={busy}
+                        onClick={() => preview(o.order, k.kind)}>
+                        {t("ord.mailPreview")}
+                      </button>
                       <button className="adm-btn adm-btn-sm adm-ghost" disabled={busy}
                         onClick={() => act(o, `api/admin/orders/${o.order}/mail`, { kind: k.kind })
                           .then((r) => r && toast.ok(t("ord.mailSent")))}>

@@ -1502,6 +1502,20 @@ app.get("/api/admin/mail", auth, adminOnly, async (_req, res) => {
   });
 });
 
+/** Как выглядит письмо по заказу — посмотреть, не отправляя. */
+app.get("/api/admin/orders/:num/mail/preview", auth, adminOnly, async (req, res) => {
+  const kind = String(req.query.kind || "");
+  if (!letters.KINDS.includes(kind)) return res.status(400).json({ error: "Неизвестное письмо" });
+  const order = (await readJson(ORDERS, [])).find((o) => o.order === req.params.num);
+  if (!order) return res.status(404).json({ error: "Заказ не найден" });
+  try {
+    const built = letters.build(kind, order, { reserveMin: RESERVE_MIN() });
+    res.json({ subject: built.subject, html: built.html, lang: built.lang });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
 /** Отправить письмо по заказу заново — когда первое не ушло. */
 app.post("/api/admin/orders/:num/mail", auth, adminOnly, async (req, res) => {
   const kind = String(req.body?.kind || "");

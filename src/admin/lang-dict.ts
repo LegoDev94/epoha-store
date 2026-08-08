@@ -262,6 +262,8 @@ export const DICT: Record<string, { lv: string; en: string; ru: string }> = {
   "ord.shipping": { lv: "Nosūtīšana", en: "Shipping", ru: "Отправка" },
   "ord.mail": { lv: "Vēstules", en: "Emails", ru: "Письма" },
   "ord.mailNotSent": { lv: "vēl nav nosūtīta", en: "not sent yet", ru: "ещё не отправлено" },
+  "ord.mailPreview": { lv: "Apskatīt", en: "Preview", ru: "Посмотреть" },
+  "ord.mailPreviewBlocked": { lv: "Pārlūks bloķēja logu — atļaujiet uznirstošos logus", en: "The browser blocked the window — allow pop-ups", ru: "Браузер заблокировал окно — разрешите всплывающие окна" },
   "ord.mailSend": { lv: "Nosūtīt", en: "Send", ru: "Отправить" },
   "ord.mailAgain": { lv: "Nosūtīt vēlreiz", en: "Send again", ru: "Отправить заново" },
   "ord.mailSent": { lv: "Vēstule nosūtīta", en: "Email sent", ru: "Письмо отправлено" },
