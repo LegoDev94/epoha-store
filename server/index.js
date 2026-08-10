@@ -2411,7 +2411,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
   const p = req.body || {};
   if (!p.id) p.id = Date.now();
 
-  /* Публикуем сразу на трёх языках: пустые версии переводим сами. */
+  /* Публикуем сразу на всех языках витрины: пустые переводим сами. */
   let translateError = "";
   const from = pickSource(p.tr);
   const missing = LANGS.filter((l) => !(p.tr?.[l]?.title || "").trim());
