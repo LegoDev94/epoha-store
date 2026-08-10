@@ -682,6 +682,14 @@ html::-webkit-scrollbar-thumb {
   font-size: 21.5px;
   line-height: 1.15;
   margin: 0 2px 8px;
+  /* Две строки и не больше: витрина сперва рисует запасной список, а
+     затем подменяет его пришедшим с сервера — при разной длине
+     названий плитки меняли высоту, и каталог дёргался на глазах. */
+  min-height: calc(2em * 1.15);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 .lot-price {
   margin: 0 2px;
