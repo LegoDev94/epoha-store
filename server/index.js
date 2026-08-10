@@ -13,6 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import * as connect from "./connect.js";
 import * as settings from "./settings.js";
+import * as categories from "./categories.js";
 import * as images from "./images.js";
 import * as mail from "./mail.js";
 import * as letters from "./letters.js";
@@ -35,6 +36,7 @@ const UA =
 
 fs.mkdirSync(UPLOADS, { recursive: true });
 settings.init(DATA_DIR);
+categories.init(path.join(DATA_DIR, "categories.json"));
 images.init({
   uploads: UPLOADS,
   cache: path.join(DATA_DIR, "cache"),
@@ -276,36 +278,9 @@ const meta = (html, attr, name) => {
   return tag?.match(/content=["']([^"']*)["']/i)?.[1] || "";
 };
 
-const CAT_RULES = [
-  ["seating", /\b(sofa|soffa|settee|couch|armchair|arm chair|chair|fauteuil|bergere|berg\u00e8re|f\u00e5t\u00f6lj|bench|stool|ottoman|d\u012bv\u0101n|kr\u0113sl|диван|кресл|стул|банкетк)/gi],
-  ["mirror", /\b(mirror|spegel|spogul|зеркал)/gi],
-  ["light", /\b(chandelier|candelabra|candlestick|candle holder|pendant|lamp|lampa|lampett|sconce|ljuskrona|ljusstake|lustra|sveč|люстр|светильник|подсвечник|канделябр|бра)/gi],
-  ["storage", /\b(chest of drawers|chest|commode|kommod|cabinet|cupboard|sideboard|drawer|byr\u00e5|dresser|bookcase|skapis|kumode|комод|шкаф|буфет)/gi],
-  ["decor", /(bowl|vase|jar|plate|dish|tray|figurine|sculpture|statuette|porcelain|faience|ceramic|glass|crystal bowl|clock|painting|picture frame|skulptūra|vāze|šķīvis|keramika|porcelāns|ваза|чаша|блюдо|статуэтк|скульптур|фарфор|керамик|поднос|часы)/gi],
-  ["table", /\b(table|bord|galds|desk|console|секретер|стол|столик)/gi],
-];
-/* Категорию выбираем по числу совпадений: заголовок весит втрое. */
-const guessCat = (title, desc = "") => {
-  let best = "seating";
-  let top = 0;
-  let bestAt = Infinity;
-  for (const [cat, re] of CAT_RULES) {
-    re.lastIndex = 0;
-    const hits =
-      (String(title).match(re) || []).length * 3 + (String(desc).match(re) || []).length;
-    if (!hits) continue;
-    re.lastIndex = 0;
-    const at = re.exec(String(title))?.index ?? Infinity;
-    /* При равном счёте побеждает слово, стоящее в названии раньше:
-       «DINING TABLE AND CHAIRS» — это стол, а не стулья. */
-    if (hits > top || (hits === top && at < bestAt)) {
-      top = hits;
-      bestAt = at;
-      best = cat;
-    }
-  }
-  return best;
-};
+/* Категории и распознавание живут в отдельном модуле: их правит
+   владелец из панели, а не разработчик в коде. */
+const guessCat = (title, desc = "") => categories.guess(title, desc);
 
 async function downloadImage(url, base, i) {
   const res = await fetch(url, {
@@ -551,6 +526,58 @@ app.get("/api/legal/:id", (req, res) => {
     res.status(404).json({ error: "not found" });
   }
 });
+/* ── Категории витрины ──
+   Список открыт всем: витрине он нужен, чтобы построить меню. Правит
+   только владелец. */
+app.get("/api/categories", (_req, res) => res.json(categories.visible()));
+
+app.get("/api/admin/categories", auth, adminOnly, async (_req, res) => {
+  const list = await loadProducts();
+  const used = {};
+  for (const p of list) used[p.cat] = (used[p.cat] || 0) + 1;
+  res.json(categories.all().map((c) => ({ ...c, items: used[c.key] || 0 })));
+});
+
+app.post("/api/admin/categories", auth, adminOnly, async (req, res) => {
+  try {
+    const saved = categories.upsert(req.body || {}, LANGS);
+    logAction(req, "category.save", `category:${saved.key}`, undefined, saved.tr?.lv);
+    res.json(saved);
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
+app.post("/api/admin/categories/order", auth, adminOnly, (req, res) => {
+  const keys = Array.isArray(req.body?.keys) ? req.body.keys.map(String) : [];
+  if (!keys.length) return res.status(400).json({ error: "Нужен порядок ключей" });
+  logAction(req, "category.order", "categories", undefined, keys.join(","));
+  res.json(categories.reorder(keys));
+});
+
+/**
+ * Удаление категории. Товары не остаются без неё: их переводят в
+ * указанную, а если она не названа — в первую видимую.
+ */
+app.delete("/api/admin/categories/:key", auth, adminOnly, async (req, res) => {
+  const key = String(req.params.key);
+  const moveTo = String(req.query.moveTo || "");
+  try {
+    if (moveTo && !categories.has(moveTo)) throw new Error("Некуда переводить товары");
+    const target = moveTo || categories.all().find((c) => c.key !== key)?.key;
+    categories.remove(key);
+    const moved = await updateJson(STORE, [], (list) => {
+      let n = 0;
+      for (const p of list) if (p.cat === key) { p.cat = target; n++; }
+      return n;
+    });
+    logAction(req, "category.delete", `category:${key}`, moved, target);
+    res.json({ ok: true, moved, target });
+  } catch (e) {
+    res.status(400).json({ error: String(e.message || e) });
+  }
+});
+
 app.get("/api/platform", (_req, res) =>
   res.json({ ...legal.PLATFORM, commission: COMMISSION(), holdDays: holdDays(), deliveryFee: DELIVERY_FEE(), stripeMode: settings.mode() })
 );

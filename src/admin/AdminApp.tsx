@@ -5,6 +5,7 @@ import { LANGS as SITE_LANG_LIST } from "../i18n";
 const SITE_LANGS = SITE_LANG_LIST.map((l) => l.code);
 import { Select } from "../ui/Select";
 import { AdminPartners, AdminPayouts, PartnerApplications, PartnerCabinet } from "./Marketplace";
+import { Categories } from "./Categories";
 import Goods, { type AdmLot } from "./Goods";
 import Orders, { needsAction, statusLabel, type Order } from "./Orders";
 import Settings from "./Settings";
@@ -17,7 +18,25 @@ import { Logo } from "../Logo";
    Роли: администратор площадки (всё) и продавец (свои товары и продажи).
    Комиссия площадки удерживается с каждой проданной позиции. */
 
-const CAT_KEYS: Category[] = ["seating", "mirror", "light", "storage", "table", "decor"];
+/* Категории заводит владелец, поэтому список берём с сервера.
+   Пока он не пришёл, показываем прежний набор — редактор не пустует. */
+const SEED_CAT_KEYS: Category[] = ["seating", "mirror", "light", "storage", "table", "decor"];
+
+function useCategories(api: ReturnType<typeof useApi>) {
+  const [cats, setCats] = useState<{ v: Category; l: string }[]>(
+    SEED_CAT_KEYS.map((v) => ({ v, l: v }))
+  );
+  const load = useCallback(() => {
+    api("api/admin/categories")
+      .then((d: { key: string; tr?: Record<string, string> }[]) => {
+        if (Array.isArray(d) && d.length)
+          setCats(d.map((c) => ({ v: c.key, l: c.tr?.lv || c.key })));
+      })
+      .catch(() => {});
+  }, [api]);
+  useEffect(load, [load]);
+  return { cats, reloadCats: load };
+}
 /* Языки карточки — те же, что и у витрины: покупатель должен видеть
    описание на своём. Список берём из одного места, чтобы новый язык
    появлялся и в редакторе, и в переводчике. */
@@ -212,7 +231,7 @@ function Editor({
 }) {
   const toast = useToast();
   const { t } = useT();
-  const cats = useMemo(() => CAT_KEYS.map((v) => ({ v, l: t(`cat.${v}`) })), [t]);
+  const { cats } = useCategories(api);
   const [p, setP] = useState<Lot>(structuredClone(item));
   const [tab, setTab] = useState<Lang>(
     () => SITE_LANGS.find((l) => item.tr[l]?.title.trim()) || "lv"
@@ -610,7 +629,6 @@ export default function AdminApp() {
 function Panel() {
   const { t } = useT();
   const { eur } = useFmt();
-  const CATS = useMemo(() => CAT_KEYS.map((v) => ({ v, l: t(`cat.${v}`) })), [t]);
   const [token, setToken] = useState(() => localStorage.getItem("epoha-token") || "");
   const [me, setMe] = useState<Me | null>(null);
   const toast = useToast();
@@ -620,6 +638,8 @@ function Panel() {
     setToken("");
     setMe(null);
   });
+
+  const { cats: CATS, reloadCats } = useCategories(api);
 
   const [items, setItems] = useState<AdmLot[]>([]);
   const [orders, setOrders] = useState<Order[]>([]);
@@ -791,6 +811,12 @@ function Panel() {
 
       {tab === "goods" && (
         <>
+          {isAdmin && (
+            <details className="adm-import adm-import-fold ct-fold">
+              <summary>{t("ct.title")}</summary>
+              <Categories api={api} onChanged={() => { reloadCats(); loadProducts(); }} />
+            </details>
+          )}
           {isAdmin ? (
             <details className="adm-import adm-import-fold" open={window.innerWidth > 720}>
               <summary>{t("imp.add")}</summary>

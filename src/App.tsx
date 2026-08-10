@@ -1,6 +1,8 @@
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import {
-  CATEGORY_KEYS,
+  SEED_CATS,
+  catLabel,
+  type Cat,
   SEED_LOTS,
   type Category,
   type Lang,
@@ -73,6 +75,22 @@ function useProducts(): Lot[] {
       });
   }, []);
   return lots;
+}
+
+/* ── категории: их заводит владелец, поэтому берём с сервера ── */
+function useCats(): Cat[] {
+  const [cats, setCats] = useState<Cat[]>(SEED_CATS);
+  useEffect(() => {
+    fetch("api/categories")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no api"))))
+      .then((d: Cat[]) => {
+        if (Array.isArray(d) && d.length) setCats(d);
+      })
+      .catch(() => {
+        /* статическая витрина — остаёмся на исходном наборе */
+      });
+  }, []);
+  return cats;
 }
 
 /* ── режим оплаты: в песочнице деньги ненастоящие ── */
@@ -189,7 +207,7 @@ function useReveal(dep: unknown) {
 }
 
 /* ── иконки категорий ── */
-function CatIcon({ c }: { c: Category | "all" }) {
+function CatIcon({ c }: { c: string }) {
   const s = {
     stroke: "currentColor",
     strokeWidth: 1.6,
@@ -371,6 +389,7 @@ function LotCard({
 /* ── шапка ── */
 function Header({
   lots,
+  cats,
   favs,
   cart,
   query,
@@ -383,6 +402,7 @@ function Header({
   fmt,
 }: {
   lots: Lot[];
+  cats: Cat[];
   favs: Store;
   cart: CartStore;
   query: string;
@@ -403,7 +423,8 @@ function Header({
     return lots
       .filter((l) => {
         const tr = l.tr[lang] ?? l.tr.lv;
-        return `${tr.title} ${tr.era} ${tr.desc} ${t("cat." + l.cat)}`.toLowerCase().includes(q);
+        const catName = catLabel(cats.find((c) => c.key === l.cat), lang);
+        return `${tr.title} ${tr.era} ${tr.desc} ${catName}`.toLowerCase().includes(q);
       })
       .slice(0, 5);
   }, [query, lots, lang, t]);
@@ -419,6 +440,10 @@ function Header({
     go("/");
     setTimeout(() => document.getElementById("catalog")?.scrollIntoView({ behavior: "smooth" }), 60);
   };
+  /* «Вся коллекция» — не категория, а состояние витрины, поэтому
+     живёт только здесь. */
+  const navCats: Cat[] = [{ key: "all", icon: "all", tr: {} }, ...cats];
+
   const pick = (c: Category | "all") => {
     setMenu(false);
     setCat(c);
@@ -509,17 +534,17 @@ function Header({
           </div>
         </div>
         <nav className="hd-cats" aria-label="Categories">
-          {CATEGORY_KEYS.map((c) => (
+          {navCats.map((c) => (
             <button
-              key={c}
-              className={`hd-cat${cat === c ? " on" : ""}`}
+              key={c.key}
+              className={`hd-cat${cat === c.key ? " on" : ""}`}
               onClick={() => {
-                setCat(c);
+                setCat(c.key);
                 goCatalog();
               }}
             >
-              <CatIcon c={c} />
-              {t("cat." + c)}
+              <CatIcon c={c.icon} />
+              {c.key === "all" ? t("cat.all") : catLabel(c, lang)}
             </button>
           ))}
         </nav>
@@ -536,15 +561,15 @@ function Header({
               </button>
             </div>
             <nav className="mn-list">
-              {CATEGORY_KEYS.map((c, i) => (
+              {navCats.map((c, i) => (
                 <button
-                  key={c}
-                  className={`mn-item${cat === c ? " on" : ""}`}
+                  key={c.key}
+                  className={`mn-item${cat === c.key ? " on" : ""}`}
                   style={{ animationDelay: `${0.05 + i * 0.05}s` }}
-                  onClick={() => pick(c)}
+                  onClick={() => pick(c.key)}
                 >
-                  <CatIcon c={c} />
-                  {t("cat." + c)}
+                  <CatIcon c={c.icon} />
+                  {c.key === "all" ? t("cat.all") : catLabel(c, lang)}
                   <span aria-hidden="true">→</span>
                 </button>
               ))}
@@ -642,6 +667,7 @@ function Footer({ t }: { t: T }) {
 /* ── витрина ── */
 function Home({
   lots,
+  cats,
   favs,
   cart,
   cat,
@@ -654,6 +680,7 @@ function Home({
   fmt,
 }: {
   lots: Lot[];
+  cats: Cat[];
   favs: Store;
   cart: CartStore;
   cat: Category | "all";
@@ -705,7 +732,7 @@ function Home({
         <div className="wrap">
           <SecHead
             kicker={t("cat.kicker")}
-            title={t("cat." + cat)}
+            title={cat === "all" ? t("cat.all") : catLabel(cats.find((c) => c.key === cat), lang)}
             count={shown.length}
             right={
               <Select
@@ -890,6 +917,7 @@ function Lightbox({
 function LotPage({
   lot,
   lots,
+  cats,
   favs,
   cart,
   lang,
@@ -898,6 +926,7 @@ function LotPage({
 }: {
   lot: Lot;
   lots: Lot[];
+  cats: Cat[];
   favs: Store;
   cart: CartStore;
   lang: Lang;
@@ -922,7 +951,9 @@ function LotPage({
         <nav className="crumbs">
           <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
           <span>/</span>
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("cat." + lot.cat)}</a>
+          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>
+            {catLabel(cats.find((c) => c.key === lot.cat), lang)}
+          </a>
           <span>/</span>
           <b>№ {lot.n}</b>
         </nav>
@@ -980,7 +1011,9 @@ function LotPage({
             />
           )}
           <aside className="pd-panel">
-            <span className="pd-n">№ {lot.n} · {t("cat." + lot.cat).toUpperCase()}</span>
+            <span className="pd-n">
+              № {lot.n} · {catLabel(cats.find((c) => c.key === lot.cat), lang).toUpperCase()}
+            </span>
             <h1 className="pd-title">{tr.title}</h1>
             <span className="pd-era">{tr.era}</span>
             <p className="pd-desc">{tr.desc}</p>
@@ -1539,6 +1572,7 @@ const inline = (s: string): React.ReactNode =>
 
 export default function App() {
   const lots = useProducts();
+  const cats = useCats();
   const sellers = useSellers();
   const sandbox = useSandbox();
   const cart = useStoredIds("epoha-cart");
@@ -1676,6 +1710,7 @@ export default function App() {
       <div className="vignette" aria-hidden="true" />
       <Header
         lots={lots}
+        cats={cats}
         favs={favs}
         cart={cartApi}
         query={query}
@@ -1690,6 +1725,7 @@ export default function App() {
       {route.view === "home" && (
         <Home
           lots={lots}
+          cats={cats}
           favs={favs}
           cart={cartApi}
           cat={cat}
@@ -1703,7 +1739,7 @@ export default function App() {
         />
       )}
       {route.view === "lot" && lot && (
-        <LotPage lot={lot} lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
+        <LotPage lot={lot} lots={lots} cats={cats} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
       )}
       {route.view === "favs" && <FavsPage lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
       {route.view === "cart" && <CartPage lots={lots} cart={cartApi} lang={lang} t={t} fmt={fmt} />}

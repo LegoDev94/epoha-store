@@ -1,0 +1,86 @@
+[
+ {
+  "key": "seating",
+  "icon": "seating",
+  "tr": {
+   "lv": "Mīkstās mēbeles",
+   "en": "Seating",
+   "ru": "Мягкая мебель",
+   "lt": "Minkšti baldai",
+   "et": "Pehme mööbel"
+  },
+  "words": "sofa|soffa|settee|couch|armchair|arm chair|chair|fauteuil|bergere|bergère|fåtölj|bench|stool|ottoman|dīvān|krēsl|диван|кресл|стул|банкетк|minkšt|tugitool",
+  "order": 0,
+  "hidden": false
+ },
+ {
+  "key": "mirror",
+  "icon": "mirror",
+  "tr": {
+   "lv": "Spoguļi",
+   "en": "Mirrors",
+   "ru": "Зеркала",
+   "lt": "Veidrodžiai",
+   "et": "Peeglid"
+  },
+  "words": "mirror|spegel|spogul|зеркал|veidrod|peegel",
+  "order": 1,
+  "hidden": false
+ },
+ {
+  "key": "light",
+  "icon": "light",
+  "tr": {
+   "lv": "Apgaismojums",
+   "en": "Lighting",
+   "ru": "Свет",
+   "lt": "Apšvietimas",
+   "et": "Valgustid"
+  },
+  "words": "chandelier|candelabra|candlestick|candle holder|pendant|lamp|lampa|lampett|sconce|ljuskrona|ljusstake|lustra|sveč|люстр|светильник|подсвечник|канделябр|бра|šviestuv|valgusti",
+  "order": 2,
+  "hidden": false
+ },
+ {
+  "key": "storage",
+  "icon": "storage",
+  "tr": {
+   "lv": "Kumodes un glabāšana",
+   "en": "Chests & storage",
+   "ru": "Комоды и хранение",
+   "lt": "Komodos ir spintos",
+   "et": "Kummutid ja hoiustamine"
+  },
+  "words": "chest of drawers|chest|commode|kommod|cabinet|cupboard|sideboard|drawer|byrå|dresser|bookcase|skapis|kumode|комод|шкаф|буфет|spinta|komoda|kummut|kapp",
+  "order": 3,
+  "hidden": false
+ },
+ {
+  "key": "table",
+  "icon": "table",
+  "tr": {
+   "lv": "Galdi",
+   "en": "Tables",
+   "ru": "Столы",
+   "lt": "Stalai",
+   "et": "Lauad"
+  },
+  "words": "table|bord|galds|desk|console|секретер|стол|столик|stalas|laud",
+  "order": 4,
+  "hidden": false
+ },
+ {
+  "key": "decor",
+  "icon": "decor",
+  "tr": {
+   "lv": "Dekors un keramika",
+   "en": "Decor & ceramics",
+   "ru": "Декор и керамика",
+   "lt": "Dekoras ir keramika",
+   "et": "Dekoor ja keraamika"
+  },
+  "words": "bowl|vase|jar|plate|dish|tray|figurine|sculpture|statuette|porcelain|faience|ceramic|glass|clock|painting|picture frame|skulptūra|vāze|šķīvis|keramika|porcelāns|ваза|чаша|блюдо|статуэтк|скульптур|фарфор|керамик|поднос|часы|vaza|keraamika",
+  "order": 5,
+  "hidden": false
+ }
+]

@@ -1,6 +1,16 @@
 import SEED from "../../data/products.json";
 
-export type Category = "seating" | "mirror" | "light" | "storage" | "table" | "decor";
+/* Категории заводит владелец в панели, поэтому ключ — просто строка.
+   Список приходит с сервера вместе с подписями на языках витрины. */
+export type Category = string;
+
+export interface Cat {
+  key: string;
+  icon: string;
+  order?: number;
+  hidden?: boolean;
+  tr: Partial<Record<Lang, string>>;
+}
 /* Витрина говорит на пяти языках соседних рынков. */
 export type Lang = "lv" | "en" | "ru" | "lt" | "et";
 
@@ -39,15 +49,20 @@ export interface SellerInfo {
 /** Локальный сид — фолбэк, когда API недоступен (напр. GitHub Pages). */
 export const SEED_LOTS = SEED as unknown as Lot[];
 
-export const CATEGORY_KEYS: (Category | "all")[] = [
-  "all",
-  "seating",
-  "mirror",
-  "light",
-  "storage",
-  "table",
-  "decor",
+/* Запасной список: он же исходный набор категорий. Нужен, когда сайт
+   открыт без сервера — на статике или пока сервер отвечает. */
+export const SEED_CATS: Cat[] = [
+  { key: "seating", icon: "seating", tr: { lv: "Mīkstās mēbeles", en: "Seating", ru: "Мягкая мебель", lt: "Minkšti baldai", et: "Pehme mööbel" } },
+  { key: "mirror", icon: "mirror", tr: { lv: "Spoguļi", en: "Mirrors", ru: "Зеркала", lt: "Veidrodžiai", et: "Peeglid" } },
+  { key: "light", icon: "light", tr: { lv: "Apgaismojums", en: "Lighting", ru: "Свет", lt: "Apšvietimas", et: "Valgustid" } },
+  { key: "storage", icon: "storage", tr: { lv: "Kumodes un glabāšana", en: "Chests & storage", ru: "Комоды и хранение", lt: "Komodos ir spintos", et: "Kummutid ja hoiustamine" } },
+  { key: "table", icon: "table", tr: { lv: "Galdi", en: "Tables", ru: "Столы", lt: "Stalai", et: "Lauad" } },
+  { key: "decor", icon: "decor", tr: { lv: "Dekors un keramika", en: "Decor & ceramics", ru: "Декор и керамика", lt: "Dekoras ir keramika", et: "Dekoor ja keraamika" } },
 ];
+
+/** Подпись категории на языке покупателя. */
+export const catLabel = (c: Cat | undefined, lang: Lang) =>
+  c ? c.tr[lang] || c.tr.lv || c.key : "";
 
 /** Путь к изображению: абсолютные и серверные — как есть. */
 export const src = (u: string) => u;
