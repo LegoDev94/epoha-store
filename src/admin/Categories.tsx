@@ -37,6 +37,9 @@ export function Categories({ api, onChanged }: { api: Api; onChanged?: () => voi
   const [list, setList] = useState<AdminCat[]>([]);
   const [edit, setEdit] = useState<AdminCat | null>(null);
   const [busy, setBusy] = useState("");
+  /* Список свёрнут: на вкладке товаров главное — сами товары. Кнопка
+     «Новая категория» при этом на виду, иначе раздел не найти. */
+  const [open, setOpen] = useState(false);
 
   const load = useCallback(() => {
     api("api/admin/categories").then(setList).catch(() => {});
@@ -107,12 +110,21 @@ export function Categories({ api, onChanged }: { api: Api; onChanged?: () => voi
     <section className="ct">
       {confirmNode}
       <div className="ct-head">
-        <h3>{t("ct.title")}</h3>
-        <button className="adm-btn adm-btn-sm" onClick={() => setEdit(blank())}>{t("ct.add")}</button>
+        <button className="ct-toggle" onClick={() => setOpen(!open)} aria-expanded={open}>
+          <span className={`ct-arrow${open ? " on" : ""}`} aria-hidden="true">▸</span>
+          {t("ct.title")}
+          <i>{list.length}</i>
+        </button>
+        <button
+          className="adm-btn adm-btn-sm"
+          onClick={() => { setOpen(true); setEdit(blank()); }}
+        >
+          {t("ct.add")}
+        </button>
       </div>
-      <p className="adm-hint">{t("ct.hint")}</p>
+      {open && <p className="adm-hint">{t("ct.hint")}</p>}
 
-      <div className="ct-list">
+      <div className="ct-list" hidden={!open}>
         {list.map((c, i) => (
           <article key={c.key} className={`ct-row${c.hidden ? " off" : ""}`}>
             <div className="ct-order">

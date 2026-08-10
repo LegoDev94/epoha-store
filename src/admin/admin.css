@@ -1188,12 +1188,24 @@
 }
 
 /* ── категории витрины ── */
-.ct-fold > summary { cursor: pointer; }
-.ct { padding: 4px 0 2px; }
-.ct-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.ct-head h3 {
-  font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--a-brass-sh);
+.ct {
+  width: min(1180px, 94vw); margin: 14px auto 0;
+  padding: 12px 16px; border: 1px solid var(--a-line);
+  border-radius: 10px; background: var(--a-card);
 }
+.ct-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.ct-toggle {
+  display: flex; align-items: center; gap: 9px; padding: 4px 0;
+  background: none; border: 0; cursor: pointer;
+  font-family: inherit; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.14em; text-transform: uppercase; color: var(--a-brass-sh);
+}
+.ct-toggle i {
+  font-style: normal; letter-spacing: 0; font-size: 11px;
+  padding: 1px 7px; border-radius: 9px; background: rgba(122, 97, 54, 0.14);
+}
+.ct-arrow { transition: transform 160ms ease; font-size: 10px; }
+.ct-arrow.on { transform: rotate(90deg); }
 .ct-list { display: flex; flex-direction: column; gap: 7px; margin: 12px 0 4px; }
 .ct-row {
   display: flex; align-items: center; gap: 12px; padding: 9px 12px;

@@ -811,12 +811,7 @@ function Panel() {
 
       {tab === "goods" && (
         <>
-          {isAdmin && (
-            <details className="adm-import adm-import-fold ct-fold">
-              <summary>{t("ct.title")}</summary>
-              <Categories api={api} onChanged={() => { reloadCats(); loadProducts(); }} />
-            </details>
-          )}
+          {isAdmin && <Categories api={api} onChanged={() => { reloadCats(); loadProducts(); }} />}
           {isAdmin ? (
             <details className="adm-import adm-import-fold" open={window.innerWidth > 720}>
               <summary>{t("imp.add")}</summary>
