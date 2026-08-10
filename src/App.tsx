@@ -1764,12 +1764,21 @@ export default function App() {
           fmt={fmt}
         />
       )}
-      {route.view === "lot" && lot && (
-        <LotPage lot={lot} lots={lots} cats={cats} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
-      )}
-      {route.view === "favs" && <FavsPage lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
-      {route.view === "cart" && <CartPage lots={lots} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
-      {route.view === "checkout" && <CheckoutPage lots={lots} sellers={sellers} cart={cartApi} lang={lang} t={t} fmt={fmt} />}
+      {/* Пока каталог грузится, страницы товара, избранного, корзины и
+          оформления пустуют — подвал оказывается вверху экрана и потом
+          уезжает вниз. Держим высоту, пока данные в пути. */}
+      {route.view === "lot" &&
+        (lot ? (
+          <LotPage lot={lot} lots={lots} cats={cats} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />
+        ) : (
+          <div className="pg-hold" aria-hidden="true" />
+        ))}
+      {route.view === "favs" &&
+        (loading ? <div className="pg-hold" aria-hidden="true" /> : <FavsPage lots={lots} favs={favs} cart={cartApi} lang={lang} t={t} fmt={fmt} />)}
+      {route.view === "cart" &&
+        (loading ? <div className="pg-hold" aria-hidden="true" /> : <CartPage lots={lots} cart={cartApi} lang={lang} t={t} fmt={fmt} />)}
+      {route.view === "checkout" &&
+        (loading ? <div className="pg-hold" aria-hidden="true" /> : <CheckoutPage lots={lots} sellers={sellers} cart={cartApi} lang={lang} t={t} fmt={fmt} />)}
       {route.view === "success" && <SuccessPage order={route.order} t={t} />}
       {route.view === "legal" && <LegalPage doc={route.doc} t={t} />}
       {route.view === "partner" && <PartnerPage t={t} lang={lang} go={go} />}
