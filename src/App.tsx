@@ -733,8 +733,10 @@ function Home({
       {/* Строка выгод вместо баннера: доставка — главный аргумент */}
       <section className="usp">
         <div className="wrap usp-row">
+          {/* Пока каталог грузится, число занимает то же место: иначе
+              строка перескакивает, а с ней и всё, что ниже. */}
           <span className="usp-item">
-            <b>{lots.length}</b> {t("usp.items")}
+            <b className="usp-count">{loading ? "—" : lots.length}</b> {t("usp.items")}
           </span>
           <span className="usp-item usp-accent">
             <i aria-hidden="true">◆</i> {t("usp.pickup")}
