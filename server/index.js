@@ -24,6 +24,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(__dirname, "..");
 const DATA_DIR = process.env.DATA_DIR || path.join(ROOT, "data");
 const UPLOADS = path.join(DATA_DIR, "uploads");
+/* Языки витрины. Латышский основной, остальные — соседние рынки. */
+const LANGS = ["lv", "en", "ru", "lt", "et"];
+
 const STORE = path.join(DATA_DIR, "store.json");
 const ORDERS = path.join(DATA_DIR, "orders.json");
 const SEED = path.join(ROOT, "data", "products.json");
@@ -381,20 +384,19 @@ async function importFromUrl(url) {
     images,
     cat: guessCat(shortTitle, fullDesc),
     priceHint,
-    /* Исходник аукциона — английский; латышская и русская версии
-       допереводятся автоматически при сохранении карточки. */
-    tr: {
-      lv: { title: "", era: "", desc: "" },
-      en: { title: shortTitle, era: "", desc: fullDesc },
-      ru: { title: "", era: "", desc: "" },
-    },
+    /* Исходник аукциона английский; остальные языки допереводятся
+       автоматически при сохранении карточки. */
+    tr: Object.fromEntries(
+      LANGS.map((l) => [
+        l,
+        l === "en" ? { title: shortTitle, era: "", desc: fullDesc } : { title: "", era: "", desc: "" },
+      ])
+    ),
   };
 }
 
 /* ── авто-перевод карточки (DeepSeek) ──
    Ключ живёт только в окружении сервера: DEEPSEEK_API_KEY. */
-/* Языки витрины. Латышский основной, остальные — соседние рынки. */
-const LANGS = ["lv", "en", "ru", "lt", "et"];
 const LANG_NAME = {
   lv: "Latvian",
   en: "English",
@@ -2480,11 +2482,11 @@ app.post("/api/admin/products", auth, async (req, res) => {
     images: Array.isArray(p.images) ? p.images.filter(Boolean) : [],
     source: p.source || "",
     sellerId: p.sellerId ?? null,
-    tr: {
-      lv: { title: "", era: "", desc: "", ...(p.tr?.lv || {}) },
-      en: { title: "", era: "", desc: "", ...(p.tr?.en || {}) },
-      ru: { title: "", era: "", desc: "", ...(p.tr?.ru || {}) },
-    },
+    /* Собираем по списку языков витрины: жёсткая тройка здесь однажды
+       уже съела литовский и эстонский при сохранении карточки. */
+    tr: Object.fromEntries(
+      LANGS.map((l) => [l, { title: "", era: "", desc: "", ...(p.tr?.[l] || {}) }])
+    ),
   };
   if (idx >= 0) list[idx] = clean;
   else list.unshift(clean);
