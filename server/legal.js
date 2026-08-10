@@ -36,9 +36,9 @@ export const DOCS = {
   },
   buyer: {
     id: "buyer",
-    version: "1.0",
+    version: "1.1",
     lang: "lv",
-    file: "buyer-terms-lv-1.0.md",
+    file: "buyer-terms-lv-1.1.md",
     title: "SOFA.LV lietošanas un pirkuma noteikumi",
     url: "/#/legal/buyer",
   },

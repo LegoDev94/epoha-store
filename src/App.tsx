@@ -13,6 +13,7 @@ import { LANGS, detectLang, localeOf, makeT, type T } from "./i18n";
 import { Logo } from "./Logo";
 import { PartnerPage } from "./Partner";
 import { Photo, SIZES, type PhotoMeta } from "./Photo";
+import { LangPicker } from "./ui/LangPicker";
 import { Select } from "./ui/Select";
 
 const AdminApp = lazy(() => import("./admin/AdminApp"));
@@ -507,18 +508,7 @@ function Header({
             )}
           </div>
           <div className="hd-actions">
-            <div className="lang" role="group" aria-label="Language">
-              {LANGS.map((l) => (
-                <button
-                  key={l.code}
-                  className={lang === l.code ? "on" : ""}
-                  onClick={() => setLang(l.code)}
-                  title={l.full}
-                >
-                  {l.label}
-                </button>
-              ))}
-            </div>
+            <LangPicker value={lang} options={LANGS} onChange={setLang} />
             <button className="hd-act" onClick={() => go("/favs")} aria-label={t("nav.favs")}>
               <Heart on={favs.ids.length > 0} />
               {favs.ids.length > 0 && <b>{favs.ids.length}</b>}
@@ -575,12 +565,8 @@ function Header({
               ))}
             </nav>
             <div className="mn-foot">
-              <div className="lang mn-lang">
-                {LANGS.map((l) => (
-                  <button key={l.code} className={lang === l.code ? "on" : ""} onClick={() => setLang(l.code)}>
-                    {l.label}
-                  </button>
-                ))}
+              <div className="mn-lang">
+                <LangPicker value={lang} options={LANGS} onChange={setLang} />
               </div>
               <button className="mn-link" onClick={() => { setMenu(false); go("/favs"); }}>
                 ♥ {t("nav.favs")}{favs.ids.length > 0 && ` · ${favs.ids.length}`}

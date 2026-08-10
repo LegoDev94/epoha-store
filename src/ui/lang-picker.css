@@ -1,0 +1,45 @@
+/* ── Выбор языка: флаг и код ────────────────────────────────────
+   Отличия от обычного селекта: свёрнутый вид узкий (флаг + две
+   буквы), а в списке рядом с названием стоит код. */
+
+.lp .lp-btn {
+  gap: 7px;
+  padding: 8px 11px;
+}
+.lp-code {
+  font-family: var(--sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+}
+.lp-code-dim {
+  margin-left: auto;
+  color: var(--sel-dim);
+  font-weight: 600;
+  opacity: 0.75;
+}
+.lp-list {
+  min-width: 186px;
+}
+.lp-name {
+  flex: 1;
+}
+
+/* Флаг: тонкая рамка отделяет белые полосы от бумажного фона */
+.flag {
+  display: block;
+  flex: 0 0 auto;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(60, 48, 24, 0.22);
+}
+
+/* В тёмном подвале и меню рамка флага светлее */
+.mn .flag,
+.ftr .flag {
+  box-shadow: 0 0 0 1px rgba(255, 253, 246, 0.35);
+}
+
+@media (max-width: 520px) {
+  .lp .lp-btn { padding: 8px 9px; gap: 6px; }
+  .lp-list { min-width: 170px; }
+}
