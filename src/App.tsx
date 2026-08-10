@@ -765,17 +765,23 @@ function Home({
             }
           />
 
-          {shown.length === 0 ? (
+          {/* Загрузка проверяется первой: пустой список во время запроса —
+              это ещё не «ничего не найдено». */}
+          {loading ? (
+            <div className="lots lots-loading">
+              {Array.from({ length: 8 }, (_, i) => (
+                <LotSkeleton key={i} />
+              ))}
+            </div>
+          ) : shown.length === 0 ? (
             <div className="empty">
               <p>{t("cat.empty")}</p>
             </div>
           ) : (
-            <div className={`lots${loading ? " lots-loading" : ""}`}>
-              {loading
-                ? Array.from({ length: 8 }, (_, i) => <LotSkeleton key={i} />)
-                : shown.map((l) => (
-                    <LotCard key={l.id} l={l} favs={favs} cart={cart} lang={lang} t={t} fmt={fmt} />
-                  ))}
+            <div className="lots">
+              {shown.map((l) => (
+                <LotCard key={l.id} l={l} favs={favs} cart={cart} lang={lang} t={t} fmt={fmt} />
+              ))}
             </div>
           )}
         </div>
