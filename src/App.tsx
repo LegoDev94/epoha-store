@@ -770,7 +770,7 @@ function Home({
               <p>{t("cat.empty")}</p>
             </div>
           ) : (
-            <div className="lots">
+            <div className={`lots${loading ? " lots-loading" : ""}`}>
               {loading
                 ? Array.from({ length: 8 }, (_, i) => <LotSkeleton key={i} />)
                 : shown.map((l) => (
