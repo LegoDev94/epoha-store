@@ -185,14 +185,20 @@ function CategoryForm({
 }) {
   const { t } = useT();
   const [c, setC] = useState<AdminCat>(cat);
+  /* Пока ключ не трогали руками, он складывается из названия сам:
+     иначе можно ввести название, нажать «Сохранить» и не понять,
+     почему кнопка неактивна. */
+  const [keyTouched, setKeyTouched] = useState(!isNew);
   const set = (patch: Partial<AdminCat>) => setC({ ...c, ...patch });
-  const setTr = (l: Lang, v: string) => setC({ ...c, tr: { ...c.tr, [l]: v } });
 
-  /* Ключ подсказываем из латышского названия, но править его можно
-     только у новой категории. */
-  const suggest = () => {
-    if (!isNew || c.key) return;
-    const base = (c.tr.lv || "")
+  const setTr = (l: Lang, v: string) => {
+    const next = { ...c, tr: { ...c.tr, [l]: v } };
+    if (l === "lv" && isNew && !keyTouched) next.key = slug(v);
+    setC(next);
+  };
+
+  const slug = (name: string) =>
+    name
       .toLowerCase()
       .replace(/[āăą]/g, "a").replace(/[čć]/g, "c").replace(/[ēėę]/g, "e")
       .replace(/[ģ]/g, "g").replace(/[īįi]/g, "i").replace(/[ķ]/g, "k")
@@ -201,8 +207,6 @@ function CategoryForm({
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 24);
-    if (base.length >= 2) set({ key: base });
-  };
 
   const ready = c.key.length >= 2 && Boolean((c.tr.lv || "").trim());
 
@@ -217,7 +221,7 @@ function CategoryForm({
             <input
               value={c.tr[l.code] || ""}
               onChange={(e) => setTr(l.code, e.target.value)}
-              onBlur={l.code === "lv" ? suggest : undefined}
+
               placeholder={l.code === "lv" ? t("ct.namePh") : ""}
             />
           </label>
@@ -229,7 +233,10 @@ function CategoryForm({
         <input
           value={c.key}
           disabled={!isNew}
-          onChange={(e) => set({ key: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") })}
+          onChange={(e) => {
+            setKeyTouched(true);
+            set({ key: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, "") });
+          }}
           placeholder="lamps"
         />
         <i className="adm-hint">{isNew ? t("ct.keyHint") : t("ct.keyLocked")}</i>
