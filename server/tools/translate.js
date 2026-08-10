@@ -105,8 +105,12 @@ const run = async () => {
     process.exit(1);
   }
   const list = JSON.parse(fs.readFileSync(STORE, "utf8"));
-  const todo = list.filter((p) => langs.some((l) => !filled(p.tr?.[l]))).slice(0, limit);
-  console.log(`товаров в каталоге: ${list.length} · без перевода на ${langs.join(", ")}: ${todo.length}`);
+  const all = list.filter((p) => langs.some((l) => !filled(p.tr?.[l])));
+  const todo = all.slice(0, limit);
+  console.log(
+    `товаров в каталоге: ${list.length} · без перевода на ${langs.join(", ")}: ${all.length}` +
+      (todo.length < all.length ? ` · за этот проход: ${todo.length}` : "")
+  );
   if (dry || !todo.length) return;
 
   let done = 0;
