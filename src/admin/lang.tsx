@@ -5,7 +5,9 @@
  * Словарь живёт в lang-dict.ts: ключ → три языка.
  */
 import { createContext, useCallback, useContext, useMemo, useState } from "react";
-import type { Lang } from "../data/catalog";
+/* У витрины пять языков, у панели три: литовский и эстонский нужны
+   покупателю, а не тому, кто ведёт заказы. */
+export type Lang = "lv" | "en" | "ru";
 import { DICT } from "./lang-dict";
 
 export const ADMIN_LANGS: { code: Lang; label: string }[] = [
@@ -76,6 +78,8 @@ export function LangSwitch() {
 }
 
 /* ── форматирование по языку ────────────────────────────────────── */
+/* Панель работает на трёх языках; литовский и эстонский добавлены
+   для витрины, и здесь просто ведут себя как латышский. */
 const locale: Record<Lang, string> = { lv: "lv-LV", en: "en-GB", ru: "ru-RU" };
 
 export const useFmt = () => {

@@ -180,7 +180,8 @@ html::-webkit-scrollbar-thumb {
 .lang button {
   background: none;
   border: none;
-  padding: 9px 11px;
+  /* Пять языков вместо трёх — поля ужимаем, чтобы шапка не разъезжалась */
+  padding: 9px 9px;
   color: #6c7260;
   font-family: var(--sans);
   font-size: 12px;

@@ -1,7 +1,8 @@
 import SEED from "../../data/products.json";
 
 export type Category = "seating" | "mirror" | "light" | "storage" | "table" | "decor";
-export type Lang = "lv" | "en" | "ru";
+/* Витрина говорит на пяти языках соседних рынков. */
+export type Lang = "lv" | "en" | "ru" | "lt" | "et";
 
 export interface Tr {
   title: string;

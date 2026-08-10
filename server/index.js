@@ -418,7 +418,15 @@ async function importFromUrl(url) {
 
 /* ── авто-перевод карточки (DeepSeek) ──
    Ключ живёт только в окружении сервера: DEEPSEEK_API_KEY. */
-const LANG_NAME = { lv: "Latvian", en: "English", ru: "Russian" };
+/* Языки витрины. Латышский основной, остальные — соседние рынки. */
+const LANGS = ["lv", "en", "ru", "lt", "et"];
+const LANG_NAME = {
+  lv: "Latvian",
+  en: "English",
+  ru: "Russian",
+  lt: "Lithuanian",
+  et: "Estonian",
+};
 
 /** Достаёт первый полный JSON-объект: модель иногда добавляет
     markdown-обёртку или пояснение после ответа. */
@@ -448,13 +456,13 @@ function extractJson(raw) {
 async function translateCard(src, from) {
   const key = settings.get("deepseekKey");
   if (!key) throw new Error("Ключ перевода не задан — задайте его в настройках площадки");
-  const targets = ["lv", "en", "ru"].filter((l) => l !== from);
+  const targets = LANGS.filter((l) => l !== from);
   const prompt = [
     `Translate a product card of a premium vintage furniture shop from ${LANG_NAME[from]}`,
     `into ${targets.map((l) => LANG_NAME[l]).join(" and ")}.`,
     "Keep the calm, expensive, editorial tone; keep proper names, styles (rococo, Gustavian, Biedermeier),",
     "measurements and centuries as they are. Do not invent facts, do not add commentary.",
-    'Answer with strict JSON only: {"lv":{"title","era","desc"},"en":{"title","era","desc"},"ru":{"title","era","desc"}}.',
+    `Answer with strict JSON only: {${LANGS.map((l) => `"${l}":{"title","era","desc"}`).join(",")}}.`,
     `The ${LANG_NAME[from]} version must be returned unchanged.`,
     "",
     JSON.stringify({ [from]: src }),
@@ -485,11 +493,11 @@ async function translateCard(src, from) {
     era: String(o.era || "").trim(),
     desc: String(o.desc || "").trim(),
   });
-  return { lv: norm(parsed.lv), en: norm(parsed.en), ru: norm(parsed.ru) };
+  return Object.fromEntries(LANGS.map((l) => [l, norm(parsed[l])]));
 }
 
 /** Язык-источник: тот, где заполнено название (приоритет lv → en → ru). */
-const pickSource = (tr) => ["lv", "en", "ru"].find((l) => (tr?.[l]?.title || "").trim());
+const pickSource = (tr) => LANGS.find((l) => (tr?.[l]?.title || "").trim());
 
 /* ── сервер ── */
 const app = express();
@@ -582,7 +590,7 @@ app.post("/api/partner-application", async (req, res) => {
       status: "new",
       ip,
       ua: cut(req.get("user-agent"), 200),
-      lang: ["lv", "en", "ru"].includes(b.lang) ? b.lang : "lv",
+      lang: LANGS.includes(b.lang) ? b.lang : "lv",
       company: cut(b.company, 160),
       regNr: cut(b.regNr, 40),
       person: cut(b.person, 120),
@@ -2406,7 +2414,7 @@ app.post("/api/admin/products", auth, async (req, res) => {
   /* Публикуем сразу на трёх языках: пустые версии переводим сами. */
   let translateError = "";
   const from = pickSource(p.tr);
-  const missing = ["lv", "en", "ru"].filter((l) => !(p.tr?.[l]?.title || "").trim());
+  const missing = LANGS.filter((l) => !(p.tr?.[l]?.title || "").trim());
   if (from && missing.length && settings.get("deepseekKey")) {
     try {
       const done = await translateCard(p.tr[from], from);

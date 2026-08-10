@@ -83,6 +83,46 @@ const L = {
     openPanel: "Open the panel",
     openOrder: "Open the order",
   },
+  lt: {
+    hello: (name) => (name ? `Sveiki, ${esc(name)}` : "Sveiki"),
+    order: "Užsakymas",
+    items: "Daiktai",
+    goods: "Daiktai",
+    shipping: "Pristatymas",
+    total: "Iš viso",
+    pickup: "Atsiėmimas Talsuose (nemokamai)",
+    courier: "Pristatymas iki durų",
+    buyer: "Pirkėjas",
+    contact: "Kontaktai",
+    note: "Komentaras",
+    seller: "Pardavėjas",
+    paidAt: "Apmokėta",
+    placedAt: "Pateikta",
+    terms: "Pirkimo taisyklės",
+    payButton: "Apmokėti užsakymą",
+    openPanel: "Atidaryti valdymo skydelį",
+    openOrder: "Atidaryti užsakymą",
+  },
+  et: {
+    hello: (name) => (name ? `Tere, ${esc(name)}` : "Tere"),
+    order: "Tellimus",
+    items: "Esemed",
+    goods: "Esemed",
+    shipping: "Kohaletoimetamine",
+    total: "Kokku",
+    pickup: "Järeletulek Talsis (tasuta)",
+    courier: "Kohaletoimetamine ukseni",
+    buyer: "Ostja",
+    contact: "Kontaktid",
+    note: "Kommentaar",
+    seller: "Müüja",
+    paidAt: "Makstud",
+    placedAt: "Vormistatud",
+    terms: "Ostutingimused",
+    payButton: "Maksa tellimuse eest",
+    openPanel: "Ava juhtpaneel",
+    openOrder: "Ava tellimus",
+  },
   ru: {
     hello: (name) => (name ? `Здравствуйте, ${esc(name)}` : "Здравствуйте"),
     order: "Заказ",
@@ -105,7 +145,7 @@ const L = {
   },
 };
 
-const lang3 = (l) => (l === "en" || l === "ru" ? l : "lv");
+const lang3 = (l) => (L[l] ? l : "lv");
 
 /** Кто продавец: сама площадка или партнёр. Покупателю это нужно знать. */
 function sellerLine(lang, order) {
@@ -114,6 +154,8 @@ function sellerLine(lang, order) {
       lv: `${PLATFORM.legalName}, reģ. Nr. ${PLATFORM.regNr}`,
       en: `${PLATFORM.legalName}, reg. No. ${PLATFORM.regNr}`,
       ru: `${PLATFORM.legalName}, рег. № ${PLATFORM.regNr}`,
+      lt: `${PLATFORM.legalName}, reg. Nr. ${PLATFORM.regNr}`,
+      et: `${PLATFORM.legalName}, reg. nr ${PLATFORM.regNr}`,
     }[lang];
   }
   return order.sellerName;
@@ -141,6 +183,26 @@ const buyerNew = {
       `The items are reserved for ${m.reserveMin} minutes. Once the payment arrives, we will send a separate confirmation.`,
     ],
     tailNote: `If the payment does not arrive, the reservation is cancelled and the items return to the catalogue. Nothing is charged in that case.`,
+  }),
+  lt: (o, t, m) => ({
+    subject: `Užsakymas ${o.order} priimtas`,
+    preheader: `Daiktai rezervuoti ${m.reserveMin} min. Iš viso ${m.total}.`,
+    heading: `Užsakymas ${o.order} priimtas`,
+    intro: [
+      `${t.hello(o.name)}, ačiū už užsakymą — gavome jį ${when("lt", o.at)}.`,
+      `Užsakymo daiktai rezervuoti ${m.reserveMin} minučių. Gavę mokėjimą atsiųsime atskirą patvirtinimo laišką.`,
+    ],
+    tailNote: `Jei mokėjimas negaunamas, rezervacija atšaukiama ir daiktai grįžta į katalogą. Pinigų tokiu atveju neprašome.`,
+  }),
+  et: (o, t, m) => ({
+    subject: `Tellimus ${o.order} on vastu võetud`,
+    preheader: `Esemed on reserveeritud ${m.reserveMin} minutiks. Kokku ${m.total}.`,
+    heading: `Tellimus ${o.order} on vastu võetud`,
+    intro: [
+      `${t.hello(o.name)}, aitäh tellimuse eest — saime selle kätte ${when("et", o.at)}.`,
+      `Tellimuse esemed on reserveeritud ${m.reserveMin} minutiks. Kui makse laekub, saadame eraldi kinnituskirja.`,
+    ],
+    tailNote: `Kui makset ei laeku, reserveering tühistatakse ja esemed lähevad kataloogi tagasi. Raha sel juhul ei küsi.`,
   }),
   ru: (o, t, m) => ({
     subject: `Заказ ${o.order} принят`,
@@ -181,6 +243,34 @@ const buyerPaid = {
       `<b>Right of withdrawal.</b> You may withdraw from the contract within 14 days of receiving the goods, without giving a reason. Send your notice to <a href="mailto:${PLATFORM.email}" style="color:#a07b3c;">${PLATFORM.email}</a> or by post: ${PLATFORM.address}.`,
       `The direct cost of returning the goods is yours. You are liable for any diminished value of the goods if they were handled beyond what is necessary to establish their nature, characteristics and functioning.`,
       `If anything is wrong with the goods or the delivery, write to us — we handle the claim ourselves, whoever the seller is.`,
+    ],
+  }),
+  lt: (o, t, m) => ({
+    subject: `Užsakymas ${o.order} apmokėtas`,
+    preheader: `Mokėjimas gautas. Šis laiškas — sutarties patvirtinimas, išsaugokite jį.`,
+    heading: `Mokėjimas už užsakymą ${o.order} gautas`,
+    intro: [
+      `${t.hello(o.name)}, jūsų mokėjimą gavome ${when("lt", o.paidAt)}. Ačiū.`,
+      `Šis laiškas yra jūsų sutarties patvirtinimas — jį galima išsaugoti ir perskaityti bet kada.`,
+    ],
+    legal: [
+      `<b>Teisė atsisakyti sutarties.</b> Per 14 dienų nuo daikto gavimo galite atsisakyti sutarties nenurodydami priežasties. Pranešimą siųskite <a href="mailto:${PLATFORM.email}" style="color:#a07b3c;">${PLATFORM.email}</a> arba paštu: ${PLATFORM.address}.`,
+      `Grąžinimo siuntimo išlaidas padengiate jūs. Atsakote už daikto vertės sumažėjimą, jei daiktą naudojote daugiau, nei reikia jo pobūdžiui, savybėms ir veikimui patikrinti.`,
+      `Jei su daiktu ar pristatymu kas nors negerai — rašykite mums: prašymą priimame ir sprendžiame mes, nesvarbu, kas yra pardavėjas.`,
+    ],
+  }),
+  et: (o, t, m) => ({
+    subject: `Tellimus ${o.order} on makstud`,
+    preheader: `Makse on laekunud. See kiri on lepingu kinnitus — hoidke see alles.`,
+    heading: `Makse tellimuse ${o.order} eest on laekunud`,
+    intro: [
+      `${t.hello(o.name)}, saime teie makse ${when("et", o.paidAt)}. Aitäh.`,
+      `See kiri on teie lepingu kinnitus — saate selle salvestada ja igal ajal üle lugeda.`,
+    ],
+    legal: [
+      `<b>Taganemisõigus.</b> 14 päeva jooksul alates eseme kättesaamisest võite lepingust taganeda põhjust nimetamata. Teate saatke aadressil <a href="mailto:${PLATFORM.email}" style="color:#a07b3c;">${PLATFORM.email}</a> või postiga: ${PLATFORM.address}.`,
+      `Tagastamise saatekulud kannate teie. Vastutate eseme väärtuse vähenemise eest, kui kasutasite seda rohkem, kui on vaja selle olemuse, omaduste ja toimimise kontrollimiseks.`,
+      `Kui esemega või tarnega on midagi valesti — kirjutage meile: avalduse võtame vastu ja lahendame meie, sõltumata sellest, kes on müüja.`,
     ],
   }),
   ru: (o, t, m) => ({

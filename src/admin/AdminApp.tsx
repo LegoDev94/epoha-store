@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Category, Lang, Lot } from "../data/catalog";
+import type { Category, Lang, Lot, Tr } from "../data/catalog";
+import { LANGS as SITE_LANG_LIST } from "../i18n";
+
+const SITE_LANGS = SITE_LANG_LIST.map((l) => l.code);
 import { Select } from "../ui/Select";
 import { AdminPartners, AdminPayouts, PartnerApplications, PartnerCabinet } from "./Marketplace";
 import Goods, { type AdmLot } from "./Goods";
@@ -15,11 +18,10 @@ import { Logo } from "../Logo";
    Комиссия площадки удерживается с каждой проданной позиции. */
 
 const CAT_KEYS: Category[] = ["seating", "mirror", "light", "storage", "table", "decor"];
-const LANGS: { v: Lang; l: string }[] = [
-  { v: "lv", l: "Latviski" },
-  { v: "en", l: "English" },
-  { v: "ru", l: "Русский" },
-];
+/* Языки карточки — те же, что и у витрины: покупатель должен видеть
+   описание на своём. Список берём из одного места, чтобы новый язык
+   появлялся и в редакторе, и в переводчике. */
+const LANGS: { v: Lang; l: string }[] = SITE_LANG_LIST.map((l) => ({ v: l.code, l: l.full }));
 
 interface OrderItem {
   id: number;
@@ -105,12 +107,16 @@ const empty = (): Lot => ({
   sold: false,
   images: [],
   source: "",
-  tr: {
-    lv: { title: "", era: "", desc: "" },
-    en: { title: "", era: "", desc: "" },
-    ru: { title: "", era: "", desc: "" },
-  },
+  tr: blankTr(),
 });
+
+/* Пустая карточка на все языки витрины: перевод подтянется при
+   сохранении, но поля должны существовать заранее. */
+function blankTr(era: Partial<Record<Lang, string>> = {}): Record<Lang, Tr> {
+  return Object.fromEntries(
+    SITE_LANGS.map((l) => [l, { title: "", era: era[l] || "", desc: "" }])
+  ) as Record<Lang, Tr>;
+}
 
 function useApi(token: string, onExpired?: () => void) {
   /* Колбэк держим в ссылке: иначе он пересоздаётся на каждом рендере,
@@ -209,7 +215,7 @@ function Editor({
   const cats = useMemo(() => CAT_KEYS.map((v) => ({ v, l: t(`cat.${v}`) })), [t]);
   const [p, setP] = useState<Lot>(structuredClone(item));
   const [tab, setTab] = useState<Lang>(
-    () => (["lv", "en", "ru"] as Lang[]).find((l) => item.tr[l]?.title.trim()) || "lv"
+    () => SITE_LANGS.find((l) => item.tr[l]?.title.trim()) || "lv"
   );
   const [busy, setBusy] = useState<false | "save" | "tr" | "up">(false);
   const [imgUrl, setImgUrl] = useState("");
@@ -309,11 +315,9 @@ function Editor({
         const base = structuredClone(p);
         setP({
           ...base, id: 0, n: "", price: 0, images: [], source: "", sold: false,
-          tr: {
-            lv: { title: "", era: base.tr.lv.era, desc: "" },
-            en: { title: "", era: base.tr.en.era, desc: "" },
-            ru: { title: "", era: base.tr.ru.era, desc: "" },
-          },
+          tr: blankTr(
+            Object.fromEntries(SITE_LANGS.map((l) => [l, base.tr[l]?.era || ""]))
+          ),
         });
         onSaved?.();
       } else onSave(saved);
@@ -455,7 +459,7 @@ function Editor({
               <button className="adm-tr" onClick={translate} disabled={!!busy}>
                 {busy === "tr" ? t("ed.translating") : `✦ Перевести с ${tab.toUpperCase()} на остальные`}
               </button>
-              {LANGS.filter((l) => l.v !== tab).map((l) => (
+              {LANGS.filter((l) => l.v !== tab && p.tr[l.v]?.title.trim()).map((l) => (
                 <button key={l.v} onClick={() => copyFrom(l.v)}>← копировать {l.v.toUpperCase()}</button>
               ))}
             </div>
