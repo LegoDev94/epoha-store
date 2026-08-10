@@ -1684,3 +1684,28 @@ picture > source { display: none; }
   .ptn-grid { grid-template-columns: 1fr; }
   .ptn-terms dl > div { grid-template-columns: 1fr; gap: 4px; }
 }
+
+/* ── Заглушки плиток каталога ────────────────────────────────────
+   Показываются, пока идёт запрос: та же сетка и та же высота, что у
+   товара, поэтому появление настоящих карточек ничего не сдвигает. */
+.lot-skel { cursor: default; pointer-events: none; }
+.lot-skel .lot-imgs { background: rgba(122, 97, 54, 0.1); }
+.skel-line {
+  display: block;
+  height: 11px;
+  border-radius: 3px;
+  background: rgba(122, 97, 54, 0.14);
+  animation: skel 1.4s ease-in-out infinite;
+}
+.skel-n { width: 54px; }
+.skel-era { width: 92px; }
+.skel-title { height: 18px; margin: 6px 2px 6px; width: 86%; }
+.skel-title.short { width: 54%; margin-bottom: 12px; }
+.skel-price { height: 20px; width: 96px; }
+@keyframes skel {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel-line { animation: none; }
+}

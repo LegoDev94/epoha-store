@@ -62,20 +62,44 @@ const go = (hash: string) => {
   location.hash = hash;
 };
 
-/* ── каталог: API, при недоступности — встроенный сид ── */
-function useProducts(): Lot[] {
-  const [lots, setLots] = useState<Lot[]>(SEED_LOTS);
+/* ── каталог: API, при недоступности — встроенный сид ──
+   Сид больше не показывается сразу: пока идёт запрос, на его месте
+   заглушки. Иначе витрина рисовала одни товары, через полсекунды
+   подменяла другими, и каталог заметно дёргался. */
+function useProducts(): { lots: Lot[]; loading: boolean } {
+  const [lots, setLots] = useState<Lot[]>([]);
+  const [loading, setLoading] = useState(true);
   useEffect(() => {
     fetch("api/products")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no api"))))
       .then((d: Lot[]) => {
-        if (Array.isArray(d) && d.length) setLots(d);
+        setLots(Array.isArray(d) && d.length ? d : SEED_LOTS);
       })
       .catch(() => {
-        /* статическая витрина — остаёмся на сид-данных */
-      });
+        /* статическая витрина — показываем встроенный список */
+        setLots(SEED_LOTS);
+      })
+      .finally(() => setLoading(false));
   }, []);
-  return lots;
+  return { lots, loading };
+}
+
+/** Заглушка плитки: та же высота, что и у товара — витрина не прыгает. */
+function LotSkeleton() {
+  return (
+    <article className="lot lot-skel" aria-hidden="true">
+      <div className="lot-imgs" />
+      <div className="lot-meta">
+        <span className="skel-line skel-n" />
+        <span className="skel-line skel-era" />
+      </div>
+      <div className="skel-line skel-title" />
+      <div className="skel-line skel-title short" />
+      <div className="lot-buy">
+        <span className="skel-line skel-price" />
+      </div>
+    </article>
+  );
 }
 
 /* ── категории: их заводит владелец, поэтому берём с сервера ── */
@@ -657,6 +681,7 @@ function Footer({ t }: { t: T }) {
 function Home({
   lots,
   cats,
+  loading,
   favs,
   cart,
   cat,
@@ -670,6 +695,7 @@ function Home({
 }: {
   lots: Lot[];
   cats: Cat[];
+  loading: boolean;
   favs: Store;
   cart: CartStore;
   cat: Category | "all";
@@ -743,9 +769,11 @@ function Home({
             </div>
           ) : (
             <div className="lots">
-              {shown.map((l) => (
-                <LotCard key={l.id} l={l} favs={favs} cart={cart} lang={lang} t={t} fmt={fmt} />
-              ))}
+              {loading
+                ? Array.from({ length: 8 }, (_, i) => <LotSkeleton key={i} />)
+                : shown.map((l) => (
+                    <LotCard key={l.id} l={l} favs={favs} cart={cart} lang={lang} t={t} fmt={fmt} />
+                  ))}
             </div>
           )}
         </div>
@@ -1560,7 +1588,7 @@ const inline = (s: string): React.ReactNode =>
   s.split(/\*\*(.+?)\*\*/g).map((part, i) => (i % 2 ? <b key={i}>{part}</b> : part));
 
 export default function App() {
-  const lots = useProducts();
+  const { lots, loading } = useProducts();
   const cats = useCats();
   const sellers = useSellers();
   const sandbox = useSandbox();
@@ -1715,6 +1743,7 @@ export default function App() {
         <Home
           lots={lots}
           cats={cats}
+          loading={loading}
           favs={favs}
           cart={cartApi}
           cat={cat}
