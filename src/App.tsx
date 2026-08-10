@@ -90,13 +90,13 @@ function LotSkeleton() {
     <article className="lot lot-skel" aria-hidden="true">
       <div className="lot-imgs" />
       <div className="lot-meta">
-        <span className="skel-line skel-n" />
-        <span className="skel-line skel-era" />
+        <span className="lot-n">&nbsp;</span>
+        <span className="lot-era">&nbsp;</span>
       </div>
-      <div className="skel-line skel-title" />
-      <div className="skel-line skel-title short" />
+      {/* Две строки — ровно столько занимает название товара */}
+      <h3 className="lot-title">&nbsp;<br />&nbsp;</h3>
       <div className="lot-buy">
-        <span className="skel-line skel-price" />
+        <span className="lot-price">&nbsp;</span>
       </div>
     </article>
   );
