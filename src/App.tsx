@@ -575,7 +575,7 @@ function Header({
                 {t("nav.cart")}{cart.ids.length > 0 && ` · ${cart.ids.length}`}
               </button>
               <a className="mn-link" href="https://wa.me/37125674959" target="_blank" rel="noopener noreferrer">
-                Telegram
+                {t("wa.label")}
               </a>
             </div>
           </aside>
