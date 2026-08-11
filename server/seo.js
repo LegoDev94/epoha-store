@@ -45,6 +45,16 @@ const brief = (s, max = 155) => {
 
 const money = (n) => `${Number(n || 0).toFixed(2)}`;
 
+/* Поиск показывает около 60 знаков заголовка — остальное обрезает на
+   полуслове. Режем сами и по границе слова. */
+const shortTitle = (s, max = 55) => {
+  const t = String(s || "").replace(/\s+/g, " ").trim();
+  if (t.length <= max) return t;
+  const cut = t.slice(0, max);
+  const at = cut.lastIndexOf(" ");
+  return (at > max * 0.5 ? cut.slice(0, at) : cut).replace(/[,.;:·\s]+$/, "") + "…";
+};
+
 /* ── разбор адреса ───────────────────────────────────────────────
    Тот же набор страниц, что и у витрины; язык берётся из приставки. */
 export function parsePath(pathname) {
@@ -94,7 +104,7 @@ const T = {
       h1: name,
     }),
     lot: (l, cat) => ({
-      title: `${l.title} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
+      title: `${shortTitle(l.title)} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
       desc: brief(l.desc || `${l.title}. ${l.era}. Cena ${money(l.price)} EUR.`),
       h1: l.title,
     }),
@@ -122,7 +132,7 @@ const T = {
       h1: name,
     }),
     lot: (l) => ({
-      title: `${l.title} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
+      title: `${shortTitle(l.title)} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
       desc: brief(l.desc || `${l.title}. ${l.era}. Price ${money(l.price)} EUR.`),
       h1: l.title,
     }),
@@ -150,7 +160,7 @@ const T = {
       h1: name,
     }),
     lot: (l) => ({
-      title: `${l.title} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
+      title: `${shortTitle(l.title)} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
       desc: brief(l.desc || `${l.title}. ${l.era}. Цена ${money(l.price)} EUR.`),
       h1: l.title,
     }),
@@ -178,7 +188,7 @@ const T = {
       h1: name,
     }),
     lot: (l) => ({
-      title: `${l.title} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
+      title: `${shortTitle(l.title)} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
       desc: brief(l.desc || `${l.title}. ${l.era}. Kaina ${money(l.price)} EUR.`),
       h1: l.title,
     }),
@@ -206,7 +216,7 @@ const T = {
       h1: name,
     }),
     lot: (l) => ({
-      title: `${l.title} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
+      title: `${shortTitle(l.title)} — ${l.era ? l.era + " · " : ""}SOFA.LV`,
       desc: brief(l.desc || `${l.title}. ${l.era}. Hind ${money(l.price)} EUR.`),
       h1: l.title,
     }),
