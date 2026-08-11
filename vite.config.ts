@@ -1,10 +1,11 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 
-// Относительная база — корректно работает на GitHub Pages проекта
-// (https://<user>.github.io/patina-vintage/) без хардкода имени репо.
+// Пути от корня сайта. Относительная база («./») годилась, пока витрина
+// жила на одном адресе и различала страницы решёткой. С настоящими
+// адресами вида /lot/78 браузер искал бы стили в /lot/assets/.
 export default defineConfig({
-  base: "./",
+  base: "/",
   plugins: [react()],
   build: {
     target: "es2020",

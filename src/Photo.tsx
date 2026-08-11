@@ -25,6 +25,9 @@ export interface PhotoMeta {
 const stem = (src: string) => (src.split("/").pop() || "").replace(/\.[^.]+$/, "");
 /* Свои файлы — и загруженные фото товаров, и снимки из сборки. */
 const isLocal = (src: string) => src.startsWith("/uploads/") || /^\.?\/img\//.test(src);
+/* В каталоге снимки записаны как «./img/…» — с адреса /lot/78 такой путь
+   ушёл бы в /lot/img/. Считаем от корня. */
+const fromRoot = (src: string) => (src.startsWith("./") ? src.slice(1) : src);
 
 const srcset = (src: string, fmt: "webp" | "avif", max: number) =>
   WIDTHS.filter((w) => w <= max && (fmt === "webp" || w >= AVIF_FROM))
@@ -57,10 +60,11 @@ export function Photo({
 }) {
   const [loaded, setLoaded] = useState(false);
   const optimized = isLocal(src);
+  const orig = fromRoot(src);
 
   const img = (
     <img
-      src={optimized ? `/i/${V}/w${Math.min(max, 960)}/${stem(src)}.webp` : src}
+      src={optimized ? `/i/${V}/w${Math.min(max, 960)}/${stem(src)}.webp` : orig}
       /* Исходник остаётся запасным: если обработка не удалась, сервер
          перенаправит на него, и фото всё равно покажется. */
       srcSet={optimized ? srcset(src, "webp", max) : undefined}
@@ -75,9 +79,9 @@ export function Photo({
       onError={(e) => {
         /* Вариант не отдался — возвращаемся к оригиналу */
         const el = e.currentTarget;
-        if (el.src !== src) {
+        if (!el.src.endsWith(orig)) {
           el.srcset = "";
-          el.src = src;
+          el.src = orig;
         }
       }}
       className={className}

@@ -145,7 +145,9 @@ function useApi(token: string, onExpired?: () => void) {
 
   return useCallback(
     async (url: string, opts: RequestInit = {}) => {
-      const res = await fetch(url, {
+      /* Адреса передают без ведущей косой — считаем их от корня, иначе
+         со страницы вида /admin/… запрос ушёл бы не туда. */
+      const res = await fetch(url.startsWith("/") ? url : "/" + url, {
         ...opts,
         headers: {
           ...(opts.body && !(opts.body instanceof FormData) ? { "Content-Type": "application/json" } : {}),
@@ -178,7 +180,7 @@ function Login({ onIn }: { onIn: (token: string, me: Me) => void }) {
     setBusy(true);
     setErr("");
     try {
-      const r = await fetch("api/admin/login", {
+      const r = await fetch("/api/admin/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ login, password: pw }),

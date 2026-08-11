@@ -210,7 +210,7 @@ export const Hint = ({ text }: { text: string }) => (
  * начатая запись. Ссылка с download такого перехода не делает.
  */
 export async function download(path: string, filename?: string) {
-  const res = await fetch("api/admin/download-token", {
+  const res = await fetch("/api/admin/download-token", {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-token": localStorage.getItem("epoha-token") || "" },
     body: JSON.stringify({ path: path.startsWith("/") ? path : "/" + path }),

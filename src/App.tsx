@@ -114,7 +114,7 @@ function useProducts(): { lots: Lot[]; loading: boolean } {
   const [lots, setLots] = useState<Lot[]>([]);
   const [loading, setLoading] = useState(true);
   useEffect(() => {
-    fetch("api/products")
+    fetch("/api/products")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no api"))))
       .then((d: Lot[]) => {
         setLots(Array.isArray(d) && d.length ? d : SEED_LOTS);
@@ -150,7 +150,7 @@ function LotSkeleton() {
 function useCats(): Cat[] {
   const [cats, setCats] = useState<Cat[]>(SEED_CATS);
   useEffect(() => {
-    fetch("api/categories")
+    fetch("/api/categories")
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("no api"))))
       .then((d: Cat[]) => {
         if (Array.isArray(d) && d.length) setCats(d);
@@ -166,7 +166,7 @@ function useCats(): Cat[] {
 function useSandbox() {
   const [test, setTest] = useState(false);
   useEffect(() => {
-    fetch("api/platform")
+    fetch("/api/platform")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => setTest(d?.stripeMode === "test"))
       .catch(() => {});
@@ -178,7 +178,7 @@ function useSandbox() {
 function useSellers(): SellerInfo[] {
   const [list, setList] = useState<SellerInfo[]>([]);
   useEffect(() => {
-    fetch("api/sellers")
+    fetch("/api/sellers")
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => Array.isArray(d) && setList(d))
       .catch(() => {
@@ -1312,7 +1312,7 @@ function CheckoutPage({
     if (!items.length || busy) return;
     setBusy(true);
     try {
-      const res = await fetch("api/orders", {
+      const res = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...form, delivery, pay, lang, items: items.map((l) => l.id) }),
@@ -1546,7 +1546,7 @@ function SuccessPage({ order, t }: { order: string; t: T }) {
     const sid = location.hash.match(/[?&]s=(cs_[A-Za-z0-9_]+)/)?.[1];
     if (!sid) return;
     /* сверяем оплату на сервере: он спросит Stripe напрямую */
-    fetch(`api/orders/${order}/confirm`, {
+    fetch(`/api/orders/${order}/confirm`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ session: sid }),
@@ -1580,7 +1580,7 @@ function LegalPage({ doc, t }: { doc: string; t: T }) {
   useEffect(() => {
     setData(null);
     setErr("");
-    fetch(`api/legal/${doc}`)
+    fetch(`/api/legal/${doc}`)
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("404"))))
       .then(setData)
       .catch(() => setErr("404"));

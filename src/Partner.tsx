@@ -42,7 +42,7 @@ export function PartnerPage({ t, lang, go }: { t: T; lang: Lang; go: (p: string)
 
   useEffect(() => {
     document.title = t("pt.meta.title");
-    fetch("api/platform")
+    fetch("/api/platform")
       .then((r) => (r.ok ? r.json() : null))
       .then((d) => d && setPlat(d))
       .catch(() => {});
@@ -67,7 +67,7 @@ export function PartnerPage({ t, lang, go }: { t: T; lang: Lang; go: (p: string)
     setBusy(true);
     setErr("");
     try {
-      const r = await fetch("api/partner-application", {
+      const r = await fetch("/api/partner-application", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ ...v, message, site, lang }),
