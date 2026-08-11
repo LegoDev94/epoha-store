@@ -640,32 +640,38 @@ ${body}
 export function llms({ products, categories }) {
   const live = products.filter((p) => !p.hidden && !p.archived && !p.sold);
   const prices = live.map((p) => p.price).sort((a, b) => a - b);
+  const cats = categories.filter((c) => !c.hidden);
+  const count = (key) => live.filter((p) => p.cat === key).length;
+  /* Файл читают языковые модели, отвечающие на любом языке, — пишем
+     по-английски, названия разделов оставляем как на витрине. */
   return `# SOFA.LV
 
-> ${PLATFORM.legalName} (reģ. ${PLATFORM.regNr}) — магазин антикварной и винтажной мебели XIX–XX веков в Латвии. Каждый предмет существует в одном экземпляре, проверен реставратором и продаётся с доставкой по Латвии, Литве и Эстонии.
+> ${PLATFORM.legalName} (reg. no. ${PLATFORM.regNr}) — a shop of antique and vintage furniture from the 19th and 20th centuries, based in Latvia. Every piece is one of a kind, checked by a restorer, and delivered across Latvia, Lithuania and Estonia.
 
-Сайт говорит на пяти языках: латышском (основной), английском, русском, литовском и эстонском. Латышская версия — по адресу без приставки, остальные — с приставкой языка: ${SITE}/en/, ${SITE}/ru/, ${SITE}/lt/, ${SITE}/et/
+The site speaks five languages: Latvian (default), English, Russian, Lithuanian and Estonian. The Latvian version lives at the plain address, the others carry a language prefix: ${SITE}/en/, ${SITE}/ru/, ${SITE}/lt/, ${SITE}/et/
 
-## Что есть в наличии
-- предметов в продаже: ${live.length}
-- цены: от ${prices[0] || 0} до ${prices[prices.length - 1] || 0} EUR
-- категории: ${categories.filter((c) => !c.hidden).map((c) => `${c.tr?.lv || c.key} (${live.filter((p) => p.cat === c.key).length})`).join(", ")}
+Each item is unique and disappears from the catalogue once sold, so quantities and prices below change often.
 
-## Условия
-- Доставка до дверей по Латвии, Литве и Эстонии — 50 EUR за заказ; самовывоз в Талси бесплатно.
-- Оплата картой онлайн через Stripe.
-- Право отказа: 14 дней с получения товара.
-- Один заказ — товары одного продавца.
+## What is in stock
+- items for sale: ${live.length}
+- prices: from ${prices[0] || 0} to ${prices[prices.length - 1] || 0} EUR
+- categories: ${cats.map((c) => `${c.tr?.lv || c.key} — ${c.tr?.en || c.key} (${count(c.key)})`).join(", ")}
 
-## Разделы
-- [Каталог](${SITE}/): все предметы с ценами и описаниями
-${categories.filter((c) => !c.hidden).map((c) => `- [${c.tr?.lv || c.key}](${SITE}/cat/${c.key})`).join("\n")}
-- [Стать партнёром](${SITE}/partner): условия для компаний, продающих через площадку
-- [Правила покупки](${SITE}/legal/buyer), [Политика приватности](${SITE}/legal/privacy)
+## Terms
+- Door-to-door delivery in Latvia, Lithuania and Estonia — 50 EUR per order; free collection in Talsi, Latvia.
+- Payment by card online through Stripe.
+- Right of withdrawal: 14 days from receiving the item.
+- One order holds items from a single seller.
 
-## Связь
-- Почта: ${PLATFORM.email}
-- Телефон и WhatsApp: +371 25 674 959
-- Адрес: ${PLATFORM.address}
+## Pages
+- [Catalogue](${SITE}/): every item with prices and descriptions
+${cats.filter((c) => count(c.key)).map((c) => `- [${c.tr?.en || c.tr?.lv || c.key}](${SITE}/cat/${c.key}): ${count(c.key)} items`).join("\n")}
+- [Become a partner](${SITE}/partner): terms for companies selling through the marketplace
+- [Purchase terms](${SITE}/legal/buyer), [Privacy policy](${SITE}/legal/privacy)
+
+## Contact
+- E-mail: ${PLATFORM.email}
+- Phone and WhatsApp: +371 25 674 959
+- Address: ${PLATFORM.address}
 `;
 }
