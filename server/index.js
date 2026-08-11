@@ -15,6 +15,7 @@ import * as connect from "./connect.js";
 import * as settings from "./settings.js";
 import * as categories from "./categories.js";
 import * as images from "./images.js";
+import * as seo from "./seo.js";
 import * as mail from "./mail.js";
 import * as letters from "./letters.js";
 import * as legal from "./legal.js";
@@ -2570,7 +2571,39 @@ app.get("/i/:version/:preset/:file", async (req, res) => {
 app.use("/uploads", express.static(UPLOADS, { maxAge: "30d", immutable: true }));
 /* Несуществующее фото должно быть «нет файла», а не страницей сайта */
 app.use("/uploads", (_req, res) => res.status(404).end());
-app.use(express.static(DIST, { maxAge: "1h" }));
-app.get(/^(?!\/api).*/, (_req, res) => res.sendFile(path.join(DIST, "index.html")));
+/* ── что видит робот ──
+   Обходчики языковых моделей скрипты не выполняют: им достаётся
+   только исходный HTML. Поэтому заголовки, разметку и текст страницы
+   вкладываем на сервере. */
+app.get("/robots.txt", (_req, res) => res.type("text/plain").send(seo.robots()));
+
+app.get("/sitemap.xml", async (_req, res) => {
+  const [products, cats] = [await loadProducts(), categories.visible()];
+  res.type("application/xml").send(seo.sitemap({ products, categories: cats }));
+});
+
+app.get("/llms.txt", async (_req, res) => {
+  const [products, cats] = [await loadProducts(), categories.visible()];
+  res.type("text/plain").send(seo.llms({ products, categories: cats }));
+});
+
+/* index:false — иначе раздача статики отдаст каркас на «/» сама,
+   в обход разметки страницы. */
+app.use(express.static(DIST, { maxAge: "1h", index: false }));
+
+const INDEX = path.join(DIST, "index.html");
+app.get(/^(?!\/api).*/, async (req, res) => {
+  try {
+    const route = seo.parsePath(req.path);
+    const html = seo.render(INDEX, route, {
+      products: await loadProducts(),
+      categories: categories.all(),
+    });
+    if (html) return res.type("html").send(html);
+  } catch (e) {
+    console.warn("[sofa] разметка страницы:", String(e.message || e));
+  }
+  res.sendFile(INDEX);
+});
 
 app.listen(PORT, () => console.log(`[epoha] http://0.0.0.0:${PORT}`));

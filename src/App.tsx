@@ -18,12 +18,17 @@ import { Select } from "./ui/Select";
 
 const AdminApp = lazy(() => import("./admin/AdminApp"));
 
-/* ═══ EPOHA — veikals / shop / магазин ═══
-   Хеш-маршруты работают и на статике, и на сервере:
-   #/  #/lot/:id  #/favs  #/cart  #/checkout  #/success/:n  #/admin */
+/* ═══ SOFA.LV — veikals / shop / магазин ═══
+   Адреса обычные: /lot/:id, /cat/:key, /cart, /legal/:doc и так далее.
+   Через решётку было проще, но поисковик фрагмент после «#» не
+   индексирует — для него весь магазин был одной страницей.
+
+   Язык живёт в приставке адреса: латышский без неё, остальные — с
+   ней (/en/lot/78). Так у каждой языковой версии свой адрес, и их
+   можно связать между собой для поиска. */
 
 type Route =
-  | { view: "home" }
+  | { view: "home"; cat?: string }
   | { view: "lot"; id: number }
   | { view: "favs" }
   | { view: "cart" }
@@ -33,33 +38,72 @@ type Route =
   | { view: "partner" }
   | { view: "admin" };
 
+/** Язык из приставки адреса; латышский — без приставки. */
+export function langFromPath(pathname = location.pathname): Lang | null {
+  const first = pathname.split("/").filter(Boolean)[0];
+  return LANGS.some((l) => l.code === first && first !== "lv") ? (first as Lang) : null;
+}
+
+const withoutLang = (pathname: string) => {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts[0] && LANGS.some((l) => l.code === parts[0])) parts.shift();
+  return "/" + parts.join("/");
+};
+
 function parseRoute(): Route {
-  const h = location.hash;
-  const lot = h.match(/^#\/lot\/(\d+)/);
+  const p = withoutLang(location.pathname);
+  const lot = p.match(/^\/lot\/(\d+)/);
   if (lot) return { view: "lot", id: Number(lot[1]) };
-  const doc = h.match(/^#\/legal\/([a-z]+)/);
+  const cat = p.match(/^\/cat\/([a-z0-9-]+)/);
+  if (cat) return { view: "home", cat: cat[1] };
+  const doc = p.match(/^\/legal\/([a-z]+)/);
   if (doc) return { view: "legal", doc: doc[1] };
-  if (h.startsWith("#/partner")) return { view: "partner" };
-  if (h.startsWith("#/favs")) return { view: "favs" };
-  if (h.startsWith("#/cart")) return { view: "cart" };
-  if (h.startsWith("#/checkout")) return { view: "checkout" };
-  if (h.startsWith("#/admin")) return { view: "admin" };
-  const s = h.match(/^#\/success\/([A-Za-z0-9-]+)/);
+  if (p.startsWith("/partner")) return { view: "partner" };
+  if (p.startsWith("/favs")) return { view: "favs" };
+  if (p.startsWith("/cart")) return { view: "cart" };
+  if (p.startsWith("/checkout")) return { view: "checkout" };
+  if (p.startsWith("/admin")) return { view: "admin" };
+  const s = p.match(/^\/success\/([A-Za-z0-9-]+)/);
   if (s) return { view: "success", order: s[1] };
   return { view: "home" };
 }
 
+/* Ссылки, разосланные до перехода на обычные адреса, работать не
+   перестанут: старый вид «#/lot/78» переписываем на новый. */
+function upgradeHashLink() {
+  const h = location.hash;
+  if (!h.startsWith("#/")) return;
+  const target = h.slice(1);
+  history.replaceState(null, "", target + location.search);
+}
+
 function useRoute(): Route {
-  const [route, setRoute] = useState<Route>(parseRoute);
+  const [route, setRoute] = useState<Route>(() => {
+    upgradeHashLink();
+    return parseRoute();
+  });
   useEffect(() => {
     const on = () => setRoute(parseRoute());
-    window.addEventListener("hashchange", on);
-    return () => window.removeEventListener("hashchange", on);
+    window.addEventListener("popstate", on);
+    window.addEventListener("sofa:navigate", on);
+    return () => {
+      window.removeEventListener("popstate", on);
+      window.removeEventListener("sofa:navigate", on);
+    };
   }, []);
   return route;
 }
-const go = (hash: string) => {
-  location.hash = hash;
+/**
+ * Переход внутри витрины: меняем адрес и сообщаем об этом приложению.
+ * Приставка языка сохраняется, чтобы человек не выпадал со своего
+ * языка при каждом клике.
+ */
+const go = (to: string) => {
+  const prefix = langFromPath() ? `/${langFromPath()}` : "";
+  const target = prefix + (to.startsWith("/") ? to : "/" + to);
+  if (target !== location.pathname) history.pushState(null, "", target);
+  scrollTo({ top: 0 });
+  dispatchEvent(new Event("sofa:navigate"));
 };
 
 /* ── каталог: API, при недоступности — встроенный сид ──
@@ -362,6 +406,17 @@ function LotCard({
   const tr = l.tr[lang] ?? l.tr.lv;
   return (
     <article className="lot reveal" onClick={() => go(`/lot/${l.id}`)}>
+      {/* Настоящая ссылка: её видит поисковик и открывает в новой
+          вкладке средняя кнопка мыши. Клик по самой плитке ведёт туда же. */}
+      <a
+        className="lot-link"
+        href={`/lot/${l.id}`}
+        onClick={(e) => {
+          e.preventDefault();
+          go(`/lot/${l.id}`);
+        }}
+        aria-label={tr.title}
+      />
       {l.sold && <span className="lot-sold">{t("lot.sold")}</span>}
       <button
         className={`lot-fav${favs.has(l.id) ? " on" : ""}`}
@@ -469,10 +524,28 @@ function Header({
      живёт только здесь. */
   const navCats: Cat[] = [{ key: "all", icon: "all", tr: {} }, ...cats];
 
+  /* У категории свой адрес: страницу можно найти в поиске и прислать
+     ссылкой, а не «открой витрину и нажми фильтр». */
+  const openCat = (c: Category | "all") => {
+    setCat(c);
+    go(c === "all" ? "/" : `/cat/${c}`);
+  };
+
   const pick = (c: Category | "all") => {
     setMenu(false);
-    setCat(c);
-    goCatalog();
+    openCat(c);
+  };
+
+  /* Смена языка — это переход на его адрес: ссылку можно отправить,
+     и получатель увидит ту же страницу на том же языке. */
+  const switchLang = (next: Lang) => {
+    setLang(next);
+    const parts = location.pathname.split("/").filter(Boolean);
+    if (parts[0] && LANGS.some((l) => l.code === parts[0])) parts.shift();
+    const tail = parts.length ? "/" + parts.join("/") : "";
+    const prefix = next === "lv" ? "" : `/${next}`;
+    history.pushState(null, "", (prefix + tail) || "/");
+    dispatchEvent(new Event("sofa:navigate"));
   };
 
   return (
@@ -485,7 +558,7 @@ function Header({
             </svg>
           </button>
           <a
-            href="#/"
+            href="/"
             className="hd-logo"
             onClick={(e) => {
               e.preventDefault();
@@ -532,7 +605,7 @@ function Header({
             )}
           </div>
           <div className="hd-actions">
-            <LangPicker value={lang} options={LANGS} onChange={setLang} />
+            <LangPicker value={lang} options={LANGS} onChange={switchLang} />
             <button className="hd-act" onClick={() => go("/favs")} aria-label={t("nav.favs")}>
               <Heart on={favs.ids.length > 0} />
               {favs.ids.length > 0 && <b>{favs.ids.length}</b>}
@@ -552,10 +625,7 @@ function Header({
             <button
               key={c.key}
               className={`hd-cat${cat === c.key ? " on" : ""}`}
-              onClick={() => {
-                setCat(c.key);
-                goCatalog();
-              }}
+              onClick={() => openCat(c.key)}
             >
               <CatIcon c={c.icon} />
               {c.key === "all" ? t("cat.all") : catLabel(c, lang)}
@@ -644,9 +714,9 @@ function Footer({ t }: { t: T }) {
           </div>
           <div className="ftr-col">
             <span>{t("ftr.shop")}</span>
-            <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
-            <a href="#/favs" onClick={(e) => { e.preventDefault(); go("/favs"); }}>{t("nav.favs")}</a>
-            <a href="#/cart" onClick={(e) => { e.preventDefault(); go("/cart"); }}>{t("nav.cart")}</a>
+            <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+            <a href="/favs" onClick={(e) => { e.preventDefault(); go("/favs"); }}>{t("nav.favs")}</a>
+            <a href="/cart" onClick={(e) => { e.preventDefault(); go("/cart"); }}>{t("nav.cart")}</a>
           </div>
           <div className="ftr-col">
             <span>{t("ftr.contact")}</span>
@@ -656,10 +726,10 @@ function Footer({ t }: { t: T }) {
           </div>
           <div className="ftr-col">
             <span>{t("legal.title")}</span>
-            <a href="#/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>{t("legal.buyer")}</a>
-            <a href="#/legal/privacy" onClick={(e) => { e.preventDefault(); go("/legal/privacy"); }}>{t("legal.privacy")}</a>
-            <a href="#/legal/partner" onClick={(e) => { e.preventDefault(); go("/legal/partner"); }}>{t("legal.partner")}</a>
-            <a className="ftr-apply" href="#/partner" onClick={(e) => { e.preventDefault(); go("/partner"); }}>
+            <a href="/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>{t("legal.buyer")}</a>
+            <a href="/legal/privacy" onClick={(e) => { e.preventDefault(); go("/legal/privacy"); }}>{t("legal.privacy")}</a>
+            <a href="/legal/partner" onClick={(e) => { e.preventDefault(); go("/legal/partner"); }}>{t("legal.partner")}</a>
+            <a className="ftr-apply" href="/partner" onClick={(e) => { e.preventDefault(); go("/partner"); }}>
               {t("ftr.partner")}
             </a>
           </div>
@@ -974,9 +1044,9 @@ function LotPage({
     <div className="pg">
       <div className="wrap">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+          <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
           <span>/</span>
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>
+          <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>
             {catLabel(cats.find((c) => c.key === lot.cat), lang)}
           </a>
           <span>/</span>
@@ -1106,7 +1176,7 @@ function FavsPage({ lots, favs, cart, lang, t, fmt }: { lots: Lot[]; favs: Store
     <div className="pg">
       <div className="wrap">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+          <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
           <span>/</span>
           <b>{t("favs.title")}</b>
         </nav>
@@ -1135,7 +1205,7 @@ function CartPage({ lots, cart, lang, t, fmt }: { lots: Lot[]; cart: CartStore; 
     <div className="pg">
       <div className="wrap wrap-narrow">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+          <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
           <span>/</span>
           <b>{t("cart.title")}</b>
         </nav>
@@ -1273,7 +1343,7 @@ function CheckoutPage({
     <div className="pg">
       <div className="wrap wrap-narrow">
         <nav className="crumbs">
-          <a href="#/cart" onClick={(e) => { e.preventDefault(); go("/cart"); }}>{t("cart.title")}</a>
+          <a href="/cart" onClick={(e) => { e.preventDefault(); go("/cart"); }}>{t("cart.title")}</a>
           <span>/</span>
           <b>{t("ck.title")}</b>
         </nav>
@@ -1455,7 +1525,7 @@ function CheckoutPage({
               <div className="ck-legal">
                 <b>{t("checkout.withdrawal.title")}</b>
                 <p>{t("checkout.withdrawal.notice")}</p>
-                <a href="#/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>
+                <a href="/legal/buyer" onClick={(e) => { e.preventDefault(); go("/legal/buyer"); }}>
                   {t("checkout.withdrawal.link")} →
                 </a>
               </div>
@@ -1520,7 +1590,7 @@ function LegalPage({ doc, t }: { doc: string; t: T }) {
     <div className="pg">
       <div className="wrap wrap-narrow">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+          <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
           <span>/</span>
           <b>{t("legal.title")}</b>
         </nav>
@@ -1536,7 +1606,7 @@ function LegalPage({ doc, t }: { doc: string; t: T }) {
               </p>
             </header>
             <Markdown text={data.body} />
-            <a className="lgl-back" href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>
+            <a className="lgl-back" href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>
               {t("legal.back")}
             </a>
           </article>
@@ -1607,6 +1677,10 @@ export default function App() {
   const [lang, setLangState] = useState<Lang>(detectLang);
   const [query, setQuery] = useState("");
   const [cat, setCat] = useState<Category | "all">("all");
+  /* Пришли по адресу категории — витрина открывается сразу на ней. */
+  useEffect(() => {
+    if (route.view === "home") setCat(route.cat || "all");
+  }, [route]);
   const [sort, setSort] = useState("new");
   const [viewed, setViewed] = useState<number[]>(() => {
     try {

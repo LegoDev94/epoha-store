@@ -1719,3 +1719,13 @@ picture > source { display: none; }
 @media (prefers-reduced-motion: reduce) {
   .skel-line { animation: none; }
 }
+
+/* Ссылка на товар лежит поверх плитки: поисковику нужен настоящий
+   адрес, человеку — привычное «открыть в новой вкладке». */
+.lot-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+}
+.lot-fav, .lot-sold, .lot-buy { position: relative; z-index: 2; }

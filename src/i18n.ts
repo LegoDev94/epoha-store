@@ -1472,6 +1472,14 @@ const et: Dict = {
 const DICTS: Record<Lang, Dict> = { lv, en, ru, lt, et };
 
 export function detectLang(): Lang {
+  /* Приставка адреса главнее сохранённого выбора: человек пришёл по
+     ссылке на конкретную языковую версию — её и показываем. */
+  try {
+    const first = location.pathname.split("/").filter(Boolean)[0] as Lang;
+    if (first && first !== "lv" && DICTS[first]) return first;
+  } catch {
+    /* сервер или необычная среда */
+  }
   try {
     const saved = localStorage.getItem("epoha-lang") as Lang | null;
     if (saved && DICTS[saved]) return saved;

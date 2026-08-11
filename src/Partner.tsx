@@ -96,7 +96,7 @@ export function PartnerPage({ t, lang, go }: { t: T; lang: Lang; go: (p: string)
     <div className="pg">
       <div className="wrap wrap-narrow">
         <nav className="crumbs">
-          <a href="#/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
+          <a href="/" onClick={(e) => { e.preventDefault(); go("/"); }}>{t("crumb.home")}</a>
           <span>/</span>
           <b>{t("pt.hero.kicker")}</b>
         </nav>
@@ -137,7 +137,7 @@ export function PartnerPage({ t, lang, go }: { t: T; lang: Lang; go: (p: string)
               </dl>
               <p className="ptn-terms-note">
                 {t("pt.terms.note")}{" "}
-                <a href="#/legal/partner" onClick={(e) => { e.preventDefault(); go("/legal/partner"); }}>
+                <a href="/legal/partner" onClick={(e) => { e.preventDefault(); go("/legal/partner"); }}>
                   {t("legal.partner")}
                 </a>
               </p>
@@ -195,7 +195,7 @@ export function PartnerPage({ t, lang, go }: { t: T; lang: Lang; go: (p: string)
                 </button>
                 <p className="ptn-consent">
                   {t("pt.form.consent")}{" "}
-                  <a href="#/legal/privacy" onClick={(e) => { e.preventDefault(); go("/legal/privacy"); }}>
+                  <a href="/legal/privacy" onClick={(e) => { e.preventDefault(); go("/legal/privacy"); }}>
                     {t("legal.privacy")}
                   </a>
                 </p>
