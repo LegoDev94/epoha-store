@@ -484,6 +484,30 @@ function readShell(file) {
  * Возвращает готовый HTML страницы: тот же каркас, но с заголовками,
  * разметкой и текстом. Не нашли страницу — отдаём каркас как есть.
  */
+/**
+ * Есть ли за адресом настоящая страница.
+ *
+ * Раньше сервер на любой путь отвечал «страница есть» и отдавал витрину:
+ * опечатка в ссылке, снятый с продажи товар и вовсе выдуманный адрес
+ * выглядели для поисковика одинаково живыми и попадали в индекс. Теперь
+ * такие адреса честно отвечают «нет такой страницы», а посетитель всё
+ * равно видит витрину и может продолжить.
+ */
+export function exists(route, { products, categories }) {
+  switch (route.view) {
+    case "lot":
+      return products.some((p) => p.id === route.id && !p.hidden && !p.archived);
+    case "cat":
+      return categories.some((c) => c.key === route.cat);
+    case "legal":
+      return Boolean(DOCS[route.doc]);
+    case "unknown":
+      return false;
+    default:
+      return true;
+  }
+}
+
 export function render(distIndex, route, data) {
   const html = readShell(distIndex);
   if (!html) return null;

@@ -205,7 +205,7 @@ function Login({ onIn }: { onIn: (token: string, me: Me) => void }) {
         <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder={t("log.pw")} />
         {err && <p className="adm-err">{err}</p>}
         <button className="adm-btn" disabled={busy}>{busy ? t("log.busy") : t("log.in")}</button>
-        <a href="#/" className="adm-back">{t("log.back")}</a>
+        <a href="/" className="adm-back">{t("log.back")}</a>
       </form>
     </div>
   );
@@ -800,7 +800,7 @@ function Panel() {
         </nav>
         {freshAt && <span className="adm-fresh" title={t("a.spisokObnovlyaetsyaSam")}>{ago(freshAt, t)}</span>}
         <LangSwitch />
-        <a href="#/" className="adm-link">{t("nav.shop")}</a>
+        <a href="/" className="adm-link">{t("nav.shop")}</a>
         <button
           className="adm-link"
           onClick={() => {

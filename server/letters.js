@@ -380,7 +380,7 @@ export function build(kind, order, extra = {}) {
         [t.seller, sellerLine(lang, order)],
       ]) +
       head.legal.map(note).join("");
-    cta = { url: `${SITE}/#/legal/buyer`, label: t.terms };
+    cta = { url: `${SITE}/legal/buyer`, label: t.terms };
     footNote = `${t.terms}: <a href="${TERMS}" style="color:#6b6257;">${TERMS}</a>`;
   } else if (kind === "admin-new" || kind === "admin-paid") {
     head = kind === "admin-new" ? adminNew(order, m) : adminPaid(order, m);
@@ -398,7 +398,7 @@ export function build(kind, order, extra = {}) {
     }
     blocks =
       head.intro.map(p).join("") + itemsTable({ items: order.items, rows, fmt }) + facts(pairs);
-    cta = { url: `${SITE}/#/admin`, label: t.openPanel };
+    cta = { url: `${SITE}/admin`, label: t.openPanel };
   } else if (kind === "seller-paid") {
     head = sellerPaid(order, m);
     blocks =
@@ -417,7 +417,7 @@ export function build(kind, order, extra = {}) {
         ["Pircējs", order.name],
       ]) +
       note(head.tailNote);
-    cta = { url: `${SITE}/#/admin`, label: "Atvērt kabinetu" };
+    cta = { url: `${SITE}/admin`, label: "Atvērt kabinetu" };
   } else {
     throw new Error(`Неизвестное письмо: ${kind}`);
   }
@@ -467,7 +467,7 @@ export function applicationLetter(app) {
     preheader: `${app.company} · ${app.email}`,
     heading: "Pieteikums kļūt par partneri",
     blocks,
-    cta: { url: `${SITE}/#/admin`, label: t.openPanel },
+    cta: { url: `${SITE}/admin`, label: t.openPanel },
     footNote: "",
   });
 

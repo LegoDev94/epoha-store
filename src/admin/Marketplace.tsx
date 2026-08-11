@@ -59,7 +59,7 @@ export function PartnerCabinet({ api, onChanged }: { api: Api; onChanged?: () =>
     api("api/partner/stripe/sync", { method: "POST" })
       .then((d) => { setMe(d); onChanged?.(); })
       .catch(() => {})
-      .finally(() => { location.hash = "#/admin"; });
+      .finally(() => { location.assign("/admin"); });
   }, [api, onChanged]);
 
   if (err) return <p className="adm-err">{err}</p>;
@@ -239,7 +239,7 @@ function TermsStep({ me, t, api, onDone }: { me: Partner; t: T; api: Api; onDone
     <div className="mp-card">
       <h3>{t("partner.terms.title")}</h3>
       <p className="adm-hint">
-        <a href="#/legal/partner" target="_blank" rel="noopener noreferrer">
+        <a href="/legal/partner" target="_blank" rel="noopener noreferrer">
           {t("partner.terms.documentsLink")} →
         </a>
       </p>

@@ -814,8 +814,8 @@ async function stripeSession(order) {
     order,
     account: order.stripeAccountId || null,
     applicationFeeCents: order.applicationFeeCents,
-    successUrl: `${BASE_URL}/#/success/${order.order}?paid=1&s={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${BASE_URL}/#/checkout`,
+    successUrl: `${BASE_URL}/success/${order.order}?paid=1&s={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${BASE_URL}/checkout`,
     expiresAt: Math.floor(Date.now() / 1000) + RESERVE_MIN() * 60,
     locale: order.lang,
   });
@@ -1378,8 +1378,8 @@ app.post("/api/partner/stripe/link", auth, sellerSelf, async (req, res) => {
       });
     }
     const link = await connect.accountLink(accountId, {
-      refreshUrl: `${BASE_URL}/#/admin?stripe=refresh`,
-      returnUrl: `${BASE_URL}/#/admin?stripe=done`,
+      refreshUrl: `${BASE_URL}/admin?stripe=refresh`,
+      returnUrl: `${BASE_URL}/admin?stripe=done`,
     });
     res.json({ url: link.url, expiresAt: link.expires_at, accountId });
   } catch (e) {
@@ -2595,10 +2595,11 @@ const INDEX = path.join(DIST, "index.html");
 app.get(/^(?!\/api).*/, async (req, res) => {
   try {
     const route = seo.parsePath(req.path);
-    const html = seo.render(INDEX, route, {
-      products: await loadProducts(),
-      categories: categories.all(),
-    });
+    const data = { products: await loadProducts(), categories: categories.all() };
+    /* Несуществующий адрес отвечает «нет такой страницы», но витрину всё
+       равно отдаём: человек видит магазин, а не пустоту. */
+    if (!seo.exists(route, data)) res.status(404);
+    const html = seo.render(INDEX, route, data);
     if (html) return res.type("html").send(html);
   } catch (e) {
     console.warn("[sofa] разметка страницы:", String(e.message || e));

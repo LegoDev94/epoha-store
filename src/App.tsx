@@ -1541,9 +1541,13 @@ function CheckoutPage({
 }
 
 function SuccessPage({ order, t }: { order: string; t: T }) {
-  const [paid, setPaid] = useState(location.hash.includes("paid=1"));
+  /* Stripe возвращает человека с меткой в запросе; у ссылок,
+     разосланных до перехода на обычные адреса, она стоит после
+     решётки — читаем оба места. */
+  const query = () => location.search + location.hash;
+  const [paid, setPaid] = useState(query().includes("paid=1"));
   useEffect(() => {
-    const sid = location.hash.match(/[?&]s=(cs_[A-Za-z0-9_]+)/)?.[1];
+    const sid = query().match(/[?&]s=(cs_[A-Za-z0-9_]+)/)?.[1];
     if (!sid) return;
     /* сверяем оплату на сервере: он спросит Stripe напрямую */
     fetch(`/api/orders/${order}/confirm`, {
