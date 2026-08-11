@@ -16,6 +16,7 @@ import * as settings from "./settings.js";
 import * as categories from "./categories.js";
 import * as images from "./images.js";
 import * as seo from "./seo.js";
+import * as indexnow from "./indexnow.js";
 import * as mail from "./mail.js";
 import * as letters from "./letters.js";
 import * as legal from "./legal.js";
@@ -86,7 +87,13 @@ const updateJson = (file, fallback, mutate) =>
   });
 
 const loadProducts = () => readJson(STORE, []);
-const saveProducts = (list) => writeJson(STORE, list);
+const saveProducts = async (list) => {
+  const r = await writeJson(STORE, list);
+  /* Поисковикам сообщаем сами: вещь у нас одна, и пока обход дойдёт до
+     новой страницы, её успевают купить. */
+  indexnow.changed(list);
+  return r;
+};
 
 /* У товаров, добавленных до появления дат, поля createdAt нет —
    проставляем один раз, сохраняя текущий порядок витрины. */
@@ -2577,6 +2584,14 @@ app.use("/uploads", (_req, res) => res.status(404).end());
    вкладываем на сервере. */
 app.get("/robots.txt", (_req, res) => res.type("text/plain").send(seo.robots()));
 
+/* Файл-подтверждение для IndexNow: по нему поисковик убеждается, что
+   адреса присылает владелец домена. */
+app.get(/^\/[a-f0-9]{32}\.txt$/, (req, res, next) => {
+  const f = indexnow.keyFile();
+  if (!f || req.path !== `/${f.name}`) return next();
+  res.type("text/plain").send(f.body);
+});
+
 app.get("/sitemap.xml", async (_req, res) => {
   const [products, cats] = [await loadProducts(), categories.visible()];
   res.type("application/xml").send(seo.sitemap({ products, categories: cats }));
@@ -2607,4 +2622,16 @@ app.get(/^(?!\/api).*/, async (req, res) => {
   res.sendFile(INDEX);
 });
 
-app.listen(PORT, () => console.log(`[epoha] http://0.0.0.0:${PORT}`));
+app.listen(PORT, async () => {
+  console.log(`[epoha] http://0.0.0.0:${PORT}`);
+  const { key, live } = indexnow.init({
+    dir: DATA_DIR,
+    site: BASE_URL,
+    langs: LANGS,
+    urlFor: seo.urlFor,
+  });
+  console.log(`[sofa] IndexNow ${live ? "включён" : "выключен"}, ключ ${key.slice(0, 8)}…`);
+  /* Первый снимок каталога: без него перезапуск выглядел бы как
+     «изменилось всё». */
+  indexnow.changed(await loadProducts());
+});
