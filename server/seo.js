@@ -360,6 +360,7 @@ export function pageFor(route, { products, categories }) {
       tail: `/lot/${lot.id}`,
       ...head,
       image: (lot.images || [])[0],
+      offer: { price: money(lot.price), sold: Boolean(lot.sold) },
       ld: [
         productLd(lot, lang, tr, cn),
         breadcrumbLd(lang, [
@@ -508,11 +509,19 @@ export function exists(route, { products, categories }) {
   }
 }
 
+/* Корзина, оформление, избранное и панель ничего не дают поиску, а в
+   выдаче выглядят как пустые страницы магазина. */
+const PRIVATE = new Set(["cart", "checkout", "favs", "admin", "success"]);
+const NOINDEX = '<meta name="robots" content="noindex, follow" />';
+
 export function render(distIndex, route, data) {
   const html = readShell(distIndex);
   if (!html) return null;
   const page = pageFor(route, data);
-  if (!page) return html;
+  if (!page) {
+    return PRIVATE.has(route.view) ? html.replace("</head>", `  ${NOINDEX}
+  </head>`) : html;
+  }
 
   const canonical = urlFor(page.lang, page.tail);
   const alternates = LANGS.map(
@@ -537,6 +546,12 @@ export function render(distIndex, route, data) {
     <meta property="og:url" content="${canonical}" />
     <meta property="og:image" content="${image}" />
     <meta name="twitter:card" content="summary_large_image" />
+    ${route.view === "lot" && page.offer
+      ? `<meta property="product:price:amount" content="${page.offer.price}" />
+    <meta property="product:price:currency" content="EUR" />
+    <meta property="product:availability" content="${page.offer.sold ? "out of stock" : "in stock"}" />
+    <meta property="product:condition" content="used" />`
+      : ""}
     ${page.ld.map((x) => `<script type="application/ld+json">${JSON.stringify(x)}</script>`).join("\n    ")}`;
 
   return html
